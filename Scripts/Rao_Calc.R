@@ -2,7 +2,12 @@ rm(list = ls())
 
 require(tidyverse)
 
+### load in refined dataset with combined studies 
+
 PREDICTS <- readRDS("Outputs/refined_predicts.rds")
+traits <- readRDS("Outputs/assembly_trait_scores.rds")
+
+
 
 
 rao_data <- PREDICTS %>%  
@@ -14,7 +19,7 @@ rao_data <- PREDICTS %>%
   
   ungroup() %>%   droplevels() %>%  
   
-  group_by(SSBS) %>% dplyr::mutate(TotalSiteAbundance = sum(SpeciesSiteAbundance)) %>% ungroup () %>%
+  group_by(SSBS) %>% dplyr::mutate(TotalSiteAbundance = sum(SpeciesSiteAbundance), site_spp = n_distinct(Jetz_Name)) %>% ungroup () %>%
   
     ### relative abundance of each species at each site SpeciesSitelevel abundance/TotalSite abundance
   dplyr::mutate(RelativeAbundance = SpeciesSiteAbundance/TotalSiteAbundance) %>%
@@ -22,8 +27,8 @@ rao_data <- PREDICTS %>%
   droplevels()
 
 
-
-
+test <- rao_data %>% filter(grepl(Source_ID, pattern = "Ndanganga"))
+as.character(unique(rao_data$Source_ID))
 
 ## 85 studies 
 
