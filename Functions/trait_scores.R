@@ -123,7 +123,6 @@ for(col in colnames(PCoA_Scores[,-1])){
   PCoA_Scores[,col] <- PCoA_Scores[,col]/max(PCoA_Scores[,col])
 }
 
-PCoA_Scores <- PCoA_Scores[,-1]
 
 
 return(PCoA_Scores)
@@ -146,8 +145,9 @@ if(any(traits != "morpho")){
 }
 
 if(any(traits == "morpho") & any(traits == "foraging")){
-trait_list <- list(morpho_traits = PC_Scores, forag_traits = PCoA_Scores)
+trait_list <- list(morpho_traits = PC_Scores, forag_traits = PCoA_Scores, both = dplyr::left_join(PC_Scores, PCoA_Scores, by = "Jetz_Name"))
 }
+
 
 return(trait_list)
 }
