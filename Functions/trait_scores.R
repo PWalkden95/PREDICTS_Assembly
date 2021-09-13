@@ -24,30 +24,30 @@ trait_scores <- function(data,traits = c("morpho", "foraging")){
 
 two_step_trait_means <- function(data){
 ## Just get the columns with the morphometric trait data
-PCA_Data <- data.frame(data[,c("Jetz_Name", "Bill.TotalCulmen", "Bill.Nares", "Bill.Width", "Bill.Depth", "Tarsus.Length", "Secondary1", "Wing.Chord", "Tail.Length")])
+PCA_Data <- data.frame(data[,c("Birdlife_Name", "Bill.TotalCulmen", "Bill.Nares", "Bill.Width", "Bill.Depth", "Tarsus.Length", "Secondary1", "Wing.Chord", "Tail.Length")])
 
-PCA_Data <- distinct(PCA_Data, Jetz_Name, .keep_all = TRUE)
+PCA_Data <- distinct(PCA_Data, Birdlife_Name, .keep_all = TRUE)
 
-rownames(PCA_Data) <- PCA_Data$Jetz_Name
+rownames(PCA_Data) <- PCA_Data$Birdlife_Name
 #### Log transform - then standardise and centre for a mean of zero and a standard deviation of 1
 
-PCA_Data <- data.frame(Jetz_Name = PCA_Data[,1], scale(log(PCA_Data[c(2:9)])))
+PCA_Data <- data.frame(Birdlife_Name = PCA_Data[,1], scale(log(PCA_Data[c(2:9)])))
 
 ### PCA on the Foraging traits - Beak Dimensions
 
 For.pca.data <- PCA_Data[,c("Bill.TotalCulmen", "Bill.Nares", "Bill.Width", "Bill.Depth")]
 
 For.pca <- prcomp(For.pca.data, center = TRUE, scale. = TRUE)
-For.pca
-summary(For.pca)
+For.pca.loadings <- list(Eigenvalues = For.pca, summary = summary(For.pca))
 
 ### PCA on the Locomotory traits - Tarsus, tail and wing dimensions
 
 Loco.pca.data <- PCA_Data[,c("Tarsus.Length", "Secondary1", "Wing.Chord", "Tail.Length")]
 
 Loco.pca <- prcomp(Loco.pca.data, center = TRUE, scale. = TRUE)
-Loco.pca
-summary(Loco.pca)
+
+Loco.pca.loadings <- list(Eigenvalues = Loco.pca, summary = summary(Loco.pca))
+
 
 
 #### Final PCA on the first Principal component of each of the first PCAs to derive an axis of body size 
@@ -55,23 +55,22 @@ summary(Loco.pca)
 Body.pca.data <- data.frame(LocoPC1 = Loco.pca$x[,1], ForPC1 = For.pca$x[,1])
 Body.pca <- prcomp(Body.pca.data, center = TRUE, scale. = TRUE)
 
-Body.pca
-summary(Body.pca)
+body.pca.loadings <- list(Eigenvalues = Body.pca, summary = summary(Body.pca))
 
 
 
 ### Match the independent axes of trait variation to species in PREDICTS 
 
-PC_Scores <- data.frame(Jetz_Name = PCA_Data[,1], Foraging.PCA = For.pca$x[,2], Loco.PCA = Loco.pca$x[,2], Body.PCA = Body.pca$x[,1])
+PC_Scores <- data.frame(Birdlife_Name = PCA_Data[,1], Foraging.PCA = For.pca$x[,2], Loco.PCA = Loco.pca$x[,2], Body.PCA = Body.pca$x[,1])
 
 
 ### standardize the PC scores so that the maximum value is 1
 
-for(col in colnames(PC_Scores[,-1])){
-  PC_Scores[,col] <- PC_Scores[,col]/max(PC_Scores[,col])
-}
 
-return(PC_Scores)
+
+two_step_pca <- list(PC_Scores = PC_Scores, Foraging = For.pca.loadings, Loco = Loco.pca.loadings, Body = body.pca.loadings)
+
+return(two_step_pca)
 }
 
 
@@ -85,13 +84,13 @@ return(PC_Scores)
 ###### To determine variation in dietary and foraging niches I performed an Principal Coordinate analysis
 foraging_strategy_traits <- function(data){
   
-PCoA_Data <- data.frame(data[,c("Jetz_Name","Invertivore","Aquatic.predator","Vertivore","Scavenger","Nectarivore","Frugivore",       
+PCoA_Data <- data.frame(data[,c("Birdlife_Name","Invertivore","Aquatic.predator","Vertivore","Scavenger","Nectarivore","Frugivore",       
                                 "Granivore","Herbivore_A","Herbivore_T")])
 
-PCoA_Data <- distinct(PCoA_Data, Jetz_Name, .keep_all = TRUE)
+PCoA_Data <- distinct(PCoA_Data, Birdlife_Name, .keep_all = TRUE)
 
 
-rownames(PCoA_Data) <- PCoA_Data$Jetz_Name
+rownames(PCoA_Data) <- PCoA_Data$Birdlife_Name
 PCoA_Data <- PCoA_Data[,c("Invertivore","Aquatic.predator","Vertivore","Scavenger","Nectarivore","Frugivore",       
                          "Granivore","Herbivore_A","Herbivore_T")]
 
@@ -103,12 +102,22 @@ Manly <- dist.prop(PCoA_Data,1)
 
 ForPCoA <- cmdscale(Manly, eig = TRUE, x.ret = TRUE, k = 8)
 
-
+PCoAVar <- round(ForPCoA$eig/sum(ForPCoA$eig)*100,1)
 mds.values <- ForPCoA$points
+mds.data <- data.frame(X = mds.values[,1], Y = mds.values[,2])
+
+## Visualise
+
+ggplot(data = mds.data, aes(x= X, y = Y)) +
+  geom_point() +
+  theme_bw() +
+  xlab(paste("PCoA1 - ", PCoAVar[1], "%", sep = "")) +
+  ylab(paste("PCoA2 - ", PCoAVar[2], "%", sep = ""))
+
 ### extract the proportion of variance explain by each PCoA axis and then the point of each species no the first two axes. 
 
 
-PCoA_Scores <- data.frame(Jetz_Name = rownames(PCoA_Data), PCoA1 = mds.values[,1], PCoA2 = mds.values[,2], PCoA3 = mds.values[,3], PCoA4 = mds.values[,4])
+PCoA_Scores <- data.frame(Birdlife_Name = rownames(PCoA_Data), PCoA1 = mds.values[,1], PCoA2 = mds.values[,2], PCoA3 = mds.values[,3], PCoA4 = mds.values[,4])
 
 
 
@@ -119,13 +128,10 @@ PCoA_Scores <- data.frame(Jetz_Name = rownames(PCoA_Data), PCoA1 = mds.values[,1
 
 ### standardise the PCA and PcoA scores
 
-for(col in colnames(PCoA_Scores[,-1])){
-  PCoA_Scores[,col] <- PCoA_Scores[,col]/max(PCoA_Scores[,col])
-}
+princoord <- list(PCoA_Scores = PCoA_Scores, Prin_coord_analysis = ForPCoA)
 
 
-
-return(PCoA_Scores)
+return(princoord)
 }
 
 if(any(traits == "morpho")){
@@ -145,7 +151,7 @@ if(any(traits != "morpho")){
 }
 
 if(any(traits == "morpho") & any(traits == "foraging")){
-trait_list <- list(morpho_traits = PC_Scores, forag_traits = PCoA_Scores, both = dplyr::left_join(PC_Scores, PCoA_Scores, by = "Jetz_Name"))
+trait_list <- list(morpho_traits = PC_Scores, forag_traits = PCoA_Scores)
 }
 
 
