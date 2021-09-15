@@ -1,5 +1,7 @@
 require(tidyverse)
-
+require(rgeos)
+require(adehabitatHR)
+require(sp)
 
 
 merge_by <- function(data, by.var){

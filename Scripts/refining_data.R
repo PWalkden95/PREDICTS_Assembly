@@ -77,7 +77,7 @@ refine_data <- combine_study(refine_data, dup) %>% droplevels()
 ###################################################
 ##################################################
 # Here there are still many sites whose use intensity is classified as cannot decide therefore after some double checking we can assign classification
-refine_data <- refine_data %>% dplyr::muate(Use_intensity = ifelse(SS == "DL1_2009__Azpiroz 1" & Predominant_habitat == "Cropland",
+refine_data <- refine_data %>% dplyr::mutate(Use_intensity = ifelse(SS == "DL1_2009__Azpiroz 1" & Predominant_habitat == "Cropland",
                                                                    "Minimal use",paste(Use_intensity)),
                                             Use_intensity = ifelse(SS == "DL1_2010__Proenca 2" & Predominant_habitat == "Plantation forest",
                                                                    "Minimal use",paste(Use_intensity)),
