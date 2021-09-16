@@ -15,6 +15,7 @@ require(magrittr) ## piping
 require(tidyverse) ## data manipulations
 require(rgl) ## 3D plotting
 
+options(rgl.printRglwidget = TRUE)
 
 ## loading in our TPDs and PREDICTS database -- PREDICTS will be used to get the site land-use classifications for sites that can be combined within study
 
@@ -253,10 +254,10 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
        dist(c(zmin,zmax))[1])) / 100
   
   
-  plot3d(x, y, z, col=filled_cells_col$color.name, box = FALSE, smooth = TRUE,xlab = "",ylab = "",zlab = "",
-         type ="s", radius = scale,alpha = 0.7, xlim = c(xmin,xmax),
+  plot3d(x, y, z, box = FALSE,smooth = TRUE,xlab = "",ylab = "",zlab = "",
+         type ="s", radius = scale,alpha = 0.8, xlim = c(xmin,xmax),
          ylim = c(ymin,ymax),
-         zlim = c(zmin,zmax))
+         zlim = c(zmin,zmax), col = filled_cells_col$color.name, lwd = 0.1, lit = FALSE)
   surface3d(x = unique(data_3d[["T21_dat"]]$T1),
             y = unique(data_3d[["T21_dat"]]$T2),
             z = matrix(rep(min(data_3d[["pl_dat"]]$T3),50*50),
@@ -295,7 +296,7 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
 }
 
 
-sum(data_3d[["T23_dat"]]$prob, na.rm = TRUE)
+
 
 sites_lu <- data.frame(SSBS= names(PREDICTS_tpds)) %>% dplyr::left_join(PREDICTS[,c("SSBS","Predominant_habitat","Use_intensity")])
 

@@ -5,7 +5,7 @@ require(TPD)
 require(doParallel)
 require(foreach)
 
-memory.limit(120000)
+
 
 randomisations <- readRDS("Outputs/site_randomisations.rds")
 PREDICTS <- readRDS("Outputs/refined_predicts.rds")
@@ -37,15 +37,15 @@ eval_grid <- TPDs(TPD_traits$complete_traits[c(1:14),1], TPD_traits$complete_tra
 
 mean_TPD_randomisations$evaluation_grid <- eval_grid$data$evaluation_grid
 
-list <- randomisations[[1]]
-registerDoParallel(cores = 3)
 
-TPD_randomisations_list <- foreach(list = randomisations[1:3],
-                                               .combine = "c",
-                                               .packages = c("tidyverse", "TPD"),
-                                               .inorder = FALSE) %dopar% { 
+# registerDoParallel(cores = 2)
+# 
+# TPD_randomisations_list <- foreach(list = randomisations[1:2],
+#                                                .combine = "c",
+#                                                .packages = c("tidyverse", "TPD"),
+#                                                .inorder = FALSE) %dopar% {} 
 
-
+TPD_randomisations_func <- function(list){
   
   site_name <- substr(colnames(list)[3],1,nchar(colnames(list)[3])-9)
   
@@ -90,21 +90,29 @@ TPD_randomisations_list <- foreach(list = randomisations[1:3],
 
   }
   
+  
+  comm_mat <- as.matrix(rowSums(comm_mat)/1000)
+  colnames(comm_mat) <- "Randomisation_Comm"
+  
   ran_com_TPD <- TPDc(trait_density,sampUnit = t(comm_mat))
   
-  
-  mean_TPDc_mat <- matrix(rep(0,50^3),nrow = 1)
- for(c in 1:length(ran_com_TPD$TPDc$TPDc)){
-  mean_TPDc_mat <- mean_TPDc_mat + ran_com_TPD$TPDc$TPDc[[c]] 
- }
-mean_TPDc_mat <- mean_TPDc_mat/1000
+mean_TPDc_mat <- as.numeric(ran_com_TPD$TPDc$TPDc$Randomisation_Comm)
 
-
-return(list(mean_TPDc_mat))
+return(mean_TPDc_mat)
 }
 
-registerDoSEQ()
-closeAllConnections()
-  
 
+require(future)
+require(future.apply)
+
+plan(multicore(workers = 8))
+
+TPD_randomisations_list <- future_lapply(randomisations,TPD_randomisations_func)
+
+TPD_randomisations <- c(mean_TPD_randomisations,TPD_randomisations_list)
+
+write_rds(file = "Outputs/randomisations_TPD.rds", TPD_randomisations)
   
+closeAllConnections()
+
+
