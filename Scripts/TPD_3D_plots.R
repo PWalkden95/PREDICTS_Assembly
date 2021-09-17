@@ -525,7 +525,7 @@ TPD_Diff_Func <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
             y = unique(sites1_data[["T21_dat"]]$T2),
             z = matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
                        nrow = 50, ncol = 50),
-            alpha = 0.5, lit = FALSE, front = "lines", back = "lines")
+            alpha = 0.5, lit = FALSE, front = "lines", back = "lines", smooth = FALSE)
   surface3d(x = unique(sites1_data[["T21_dat"]]$T1),
             y = unique(sites1_data[["T21_dat"]]$T2),
             z = matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
@@ -535,7 +535,7 @@ TPD_Diff_Func <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
             y = unique(sites1_data[["T21_dat"]]$T2),
             z = matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
                        nrow = 50, ncol = 50),
-            alpha = 0.5, lit = FALSE, front = "lines", back = "lines")
+            alpha = 0.5, lit = FALSE, front = "lines", back = "lines", smooth = FALSE)
   surface3d(x = rep(min(sites1_data[["T21_dat"]]$T1),50),
             y = unique(sites1_data[["T21_dat"]]$T2),
             z = matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
@@ -545,14 +545,14 @@ TPD_Diff_Func <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
             y = rep(min(sites1_data[["T21_dat"]]$T2),50),
             z = t(matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
                          nrow = 50, ncol = 50)),
-            alpha = 0.5, lit = FALSE, front = "lines", back = "lines")
+            alpha = 0.5, lit = FALSE, front = "lines", back = "lines", smooth = FALSE)
   surface3d(x = unique(sites1_data[["T21_dat"]]$T1),
             y = rep(min(sites1_data[["T21_dat"]]$T2),50),
             z = t(matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
                          nrow = 50, ncol = 50)),
             color = T23_col_mat, lit = FALSE, smooth = FALSE)
   title3d(main = "3D_TPD_Plot", xlab = T2lab, ylab = T1lab, zlab = T3lab)
-  
+  rgl.viewpoint()
   
 }
 
