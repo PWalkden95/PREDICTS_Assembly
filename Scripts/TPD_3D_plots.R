@@ -254,7 +254,7 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
        dist(c(ymin,ymax))[1],
        dist(c(zmin,zmax))[1])) / 100
   
-  
+  rgl.viewpoint(theta = 50,phi = 25, zoom = 13/16)
   plot3d(x, y, z, box = FALSE,xlab = "",ylab = "",zlab = "",
          type ="s", radius = scale,alpha = 0.8, xlim = c(xmin,xmax),
          ylim = c(ymin,ymax),
@@ -516,7 +516,7 @@ TPD_Diff_Func <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
                   dist(c(zmin,zmax))[1])) / 100
   
   
-  
+  rgl.viewpoint(theta = 50,phi = 25, zoom = 13/16)
   plot3d(x, y, z, box = FALSE,xlab = "",ylab = "",zlab = "",
          type ="s", radius = scale,alpha = 0.8, xlim = c(xmin,xmax),
          ylim = c(ymin,ymax),
@@ -552,7 +552,7 @@ TPD_Diff_Func <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
                          nrow = 50, ncol = 50)),
             color = T23_col_mat, lit = FALSE, smooth = FALSE)
   title3d(main = "3D_TPD_Plot", xlab = T2lab, ylab = T1lab, zlab = T3lab)
-  rgl.viewpoint()
+  
   
 }
 
