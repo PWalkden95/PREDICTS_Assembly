@@ -51,7 +51,7 @@ TPD_plot_fun <- function(mat){
 #########################
 ######################## function to gather data in the required format for the figure making can handle multiple sites at once so when it comes to 
 ####################### getting sites of the same land-use type you can just input that as a single vector
-site <- names(PREDICTS_tpds)[1:10]
+
 
 TPD_plot_data <- function(data,site){
   
@@ -92,17 +92,18 @@ TPD_plot_data <- function(data,site){
 
 
 ################ examle of how to use the data and how to represent the three trait axes in 3 2D plots
-plot_data <- TPD_plot_data(data = PREDICTS_tpds,site)
 
-##
-
-T21_plo <- TPD_plot_fun(plot_data[["T21_dat"]]) + ylab("Locomotion") + theme(axis.title.x = element_blank())
-T31_plo <- TPD_plot_fun(plot_data[["T31_dat"]]) + xlab("Body") + theme(axis.title.y = element_blank())
-T23_plo <- TPD_plot_fun(plot_data[["T23_dat"]]) + xlab("Foraging") + ylab("Body")
-
-TPD_grid <-  ggarrange(T21_plo,T31_plo,T23_plo, ncol = 2, nrow = 2 , align = "hv")
-
-plot(TPD_grid)
+# plot_data <- TPD_plot_data(data = PREDICTS_tpds,site)
+# 
+# ##
+# 
+# T21_plo <- TPD_plot_fun(plot_data[["T21_dat"]]) + ylab("Locomotion") + theme(axis.title.x = element_blank())
+# T31_plo <- TPD_plot_fun(plot_data[["T31_dat"]]) + xlab("Body") + theme(axis.title.y = element_blank())
+# T23_plo <- TPD_plot_fun(plot_data[["T23_dat"]]) + xlab("Foraging") + ylab("Body")
+# 
+# TPD_grid <-  ggarrange(T21_plo,T31_plo,T23_plo, ncol = 2, nrow = 2 , align = "hv")
+# 
+# plot(TPD_grid)
 
 
 #########################################
@@ -254,10 +255,10 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
        dist(c(zmin,zmax))[1])) / 100
   
   
-  plot3d(x, y, z, box = FALSE,smooth = TRUE,xlab = "",ylab = "",zlab = "",
+  plot3d(x, y, z, box = FALSE,xlab = "",ylab = "",zlab = "",
          type ="s", radius = scale,alpha = 0.8, xlim = c(xmin,xmax),
          ylim = c(ymin,ymax),
-         zlim = c(zmin,zmax), col = filled_cells_col$color.name, lwd = 0.1, lit = FALSE)
+         zlim = c(zmin,zmax), col = filled_cells_col$color.name, lwd = 0.1)
   surface3d(x = unique(data_3d[["T21_dat"]]$T1),
             y = unique(data_3d[["T21_dat"]]$T2),
             z = matrix(rep(min(data_3d[["pl_dat"]]$T3),50*50),
@@ -302,10 +303,260 @@ sites_lu <- data.frame(SSBS= names(PREDICTS_tpds)) %>% dplyr::left_join(PREDICTS
 
 primary <- sites_lu %>% dplyr::filter(grepl(Predominant_habitat, pattern = "Primary")) %>% pull(SSBS)
 
+
+
 TPD_3d_plot(sites = primary,data = PREDICTS_tpds, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body")
 
+#####################################################
+#####################################################
+## SD plot showing the difference between two set of sites 
 
+secondary <- sites_lu %>% dplyr::filter(grepl(Predominant_habitat, pattern = "secondary",ignore.case = TRUE)) %>% pull(SSBS)
 
+data <- PREDICTS_tpds
+sites1 <- primary
+sites2 <- secondary
+
+TPD_Diff_Func <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
+  
+  sites1_data <- TPD_plot_data(data,sites1)
+  sites2_data <- TPD_plot_data(data,sites2)
+ 
+  filled_cells_1 <- sites1_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>% dplyr::summarise(prob = mean(prob, na.rm = TRUE)) %>%
+    dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% filter(!is.na(prob))
+  
+  filled_cells_2 <- sites2_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>% dplyr::summarise(prob_2 = mean(prob, na.rm = TRUE)) %>%
+    dplyr::mutate(prob_2 = ifelse(prob_2 == 0,NA,prob_2)) %>% filter(!is.na(prob_2))
+  
+  diff_cells <- filled_cells_1 %>% dplyr::left_join(filled_cells_2, by = c("T1","T2","T3")) %>% data.frame()
+  
+  cells_frame <- filled_cells_2 %>% dplyr::left_join(filled_cells_1, by = c("T1","T2","T3")) %>% dplyr::filter(is.na(prob)) %>%
+    dplyr::relocate(prob, .before = prob_2) %>% rbind(diff_cells) %>% dplyr::mutate(prob = ifelse(is.na(prob), 0, prob),
+                                                                                    prob_2 = ifelse(is.na(prob_2), 0, prob_2),
+                                                                                    diff = prob_2 - prob) 
+    
+  
+  
+  x <- cells_frame$T2
+  y <- cells_frame$T1
+  z <- cells_frame$T3
+  
+  
+  ##### HIGH CELLS 
+  
+  pos_cells <- cells_frame %>% dplyr::filter(diff > 0) %>% pull(diff)
+  
+  my.colors_high <-colorRampPalette(c("tomato", "orangered", "orangered4", "red")) #creates a function my.colors which interpolates n colors between blue, white and red
+  color.df_high<-data.frame(diff=pos_cells[order(pos_cells)], color.name=my.colors_high(length(pos_cells))) %>% distinct(diff,.keep_all = TRUE)#generates 2001 colors from the color ramp
+  
+  
+  ##### LOW CELLS 
+  
+  neg_cells <- cells_frame %>% dplyr::filter(diff < 0) %>% pull(diff)
+  
+  my.colors_low <-colorRampPalette(c("blue", "steelblue4", "steelblue1", "lightskyblue1")) #creates a function my.colors which interpolates n colors between blue, white and red
+  color.df_low<-data.frame(diff=neg_cells[order(neg_cells)], color.name=my.colors_low(length(neg_cells))) %>% distinct(diff,.keep_all = TRUE)#generates 2001 colors from the color ramp
+  
+  color.df <- rbind(color.df_high,color.df_low)
+  
+  filled_cells_col <- cells_frame %>% dplyr::left_join(color.df, by = "diff") %>% 
+    dplyr::mutate(color.name = ifelse(is.na(color.name), "#FFFFFF",color.name))
+  
+  
+
+ 
+  ############################################################
+  ############################################################
+  
+  
+  my_colour_2p <- colorRampPalette(c("yellow","orange","red"))
+  my_colour_2n <- colorRampPalette(c("blue","steelblue1","lightskyblue1"))
+  
+  #######################################
+  ###########################################
+  
+  
+  T21_col_mat <- matrix(rep("#FFFFFF",50*50),
+                        nrow = 50, ncol = 50)
+  
+  
+  T21_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
+                    nrow = 50, ncol = 50)
+  rownames(T21_col) <- unique(sites1_data[["T21_dat"]]$T1)
+  colnames(T21_col) <- unique(sites1_data[["T21_dat"]]$T2)
+  
+  s1d <- sites1_data[["T21_dat"]] %>% dplyr::mutate(prob = ifelse(is.na(prob), 0, prob))
+  s2d <- sites2_data[["T21_dat"]] %>% dplyr::mutate(prob = ifelse(is.na(prob), 0, prob))
+  
+  for(i in 1:nrow(sites1_data[["T21_dat"]])){
+    T21_col[as.character(sites1_data[["T21_dat"]][i,1]),as.character(sites1_data[["T21_dat"]][i,2])] <- 
+      ifelse((s2d[i,3] - s1d[i,3]) == 0, NA,(s2d[i,3] - s1d[i,3]))
+  }
+  
+  T21_vals <- T21_col[which(!is.na(T21_col))]
+  
+  pos_T21_vals <- T21_vals[which(T21_vals > 0)]
+  pos_T21_vals <- pos_T21_vals[order(pos_T21_vals)]
+  pos_T21_cols <- my_colour_2p(length(pos_T21_vals))
+
+  neg_T21_vals <- T21_vals[which(T21_vals < 0)]
+  neg_T21_vals <- neg_T21_vals[order(neg_T21_vals)]
+  neg_T21_cols <- my_colour_2n(length(neg_T21_vals))
+  
+  colours_T21 <- data.frame(value = c(neg_T21_vals,pos_T21_vals), color.name = c(neg_T21_cols,pos_T21_cols)) 
+  
+  ###rows are x
+  ### columns are y
+  
+  
+  T21_col_mat[which(!is.na(T21_col))[order(T21_vals)]] <- colours_T21$color.name
+  
+  
+  T21_col_mat <- as.character(T21_col_mat)
+  
+  
+  #######################################
+  ###########################################
+  
+  
+  T31_col_mat <- matrix(rep("#FFFFFF",50*50),
+                        nrow = 50, ncol = 50)
+  
+  
+  T31_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
+                    nrow = 50, ncol = 50)
+  rownames(T31_col) <- unique(sites1_data[["T31_dat"]]$T1)
+  colnames(T31_col) <- unique(sites1_data[["T31_dat"]]$T2)
+  
+  s1d <- sites1_data[["T31_dat"]] %>% dplyr::mutate(prob = ifelse(is.na(prob), 0, prob))
+  s2d <- sites2_data[["T31_dat"]] %>% dplyr::mutate(prob = ifelse(is.na(prob), 0, prob))
+  
+  for(i in 1:nrow(sites1_data[["T31_dat"]])){
+    T31_col[as.character(sites1_data[["T31_dat"]][i,1]),as.character(sites1_data[["T31_dat"]][i,2])] <- 
+      ifelse((s2d[i,3] - s1d[i,3]) == 0, NA,(s2d[i,3] - s1d[i,3]))
+  }
+  
+  T31_vals <- T31_col[which(!is.na(T31_col))]
+  
+  pos_T31_vals <- T31_vals[which(T31_vals > 0)]
+  pos_T31_vals <- pos_T31_vals[order(pos_T31_vals)]
+  pos_T31_cols <- my_colour_2p(length(pos_T31_vals))
+  
+  neg_T31_vals <- T31_vals[which(T31_vals < 0)]
+  neg_T31_vals <- neg_T31_vals[order(neg_T31_vals)]
+  neg_T31_cols <- my_colour_2n(length(neg_T31_vals))
+  
+  colours_T31 <- data.frame(value = c(neg_T31_vals,pos_T31_vals), color.name = c(neg_T31_cols,pos_T31_cols)) 
+  
+  ###rows are x
+  ### columns are y
+  
+  
+  T31_col_mat[which(!is.na(T31_col))[order(T31_vals)]] <- colours_T31$color.name
+  
+  
+  T31_col_mat <- as.character(T31_col_mat)
+  
+  #######################################
+  ###########################################
+  
+  
+  T23_col_mat <- matrix(rep("#FFFFFF",50*50),
+                        nrow = 50, ncol = 50)
+  
+  
+  T23_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
+                    nrow = 50, ncol = 50)
+  rownames(T23_col) <- unique(sites1_data[["T23_dat"]]$T1)
+  colnames(T23_col) <- unique(sites1_data[["T23_dat"]]$T2)
+  
+  s1d <- sites1_data[["T23_dat"]] %>% dplyr::mutate(prob = ifelse(is.na(prob), 0, prob))
+  s2d <- sites2_data[["T23_dat"]] %>% dplyr::mutate(prob = ifelse(is.na(prob), 0, prob))
+  
+  for(i in 1:nrow(sites1_data[["T23_dat"]])){
+    T23_col[as.character(sites1_data[["T23_dat"]][i,1]),as.character(sites1_data[["T23_dat"]][i,2])] <- 
+      ifelse((s2d[i,3] - s1d[i,3]) == 0, NA,(s2d[i,3] - s1d[i,3]))
+  }
+  
+  
+  T23_vals <- T23_col[which(!is.na(T23_col))]
+  
+  pos_T23_vals <- T23_vals[which(T23_vals > 0)]
+  pos_T23_vals <- pos_T23_vals[order(pos_T23_vals)]
+  pos_T23_cols <- my_colour_2p(length(pos_T23_vals))
+  
+  neg_T23_vals <- T23_vals[which(T23_vals < 0)]
+  neg_T23_vals <- neg_T23_vals[order(neg_T23_vals)]
+  neg_T23_cols <- my_colour_2n(length(neg_T23_vals))
+  
+  colours_T23 <- data.frame(value = c(neg_T23_vals,pos_T23_vals), color.name = c(neg_T23_cols,pos_T23_cols)) 
+  
+  ###rows are x
+  ### columns are y
+  
+  
+  T23_col_mat[which(!is.na(T23_col))[order(T23_vals)]] <- colours_T23$color.name
+  
+  
+  T23_col_mat <- as.character(T23_col_mat)
+  
+  
+  #######################################
+  ###################################
+  
+  xmax <- max(sites1_data[["pl_dat"]]$T2)
+  xmin <- min(sites1_data[["pl_dat"]]$T2)
+  ymax <- max(sites1_data[["pl_dat"]]$T1)
+  ymin <- min(sites1_data[["pl_dat"]]$T1)
+  zmax <- max(sites1_data[["pl_dat"]]$T3)
+  zmin <- min(sites1_data[["pl_dat"]]$T3)
+  
+  scale <- mean(c(dist(c(xmin,xmax))[1],
+                  dist(c(ymin,ymax))[1],
+                  dist(c(zmin,zmax))[1])) / 100
+  
+  
+  
+  plot3d(x, y, z, box = FALSE,xlab = "",ylab = "",zlab = "",
+         type ="s", radius = scale,alpha = 0.8, xlim = c(xmin,xmax),
+         ylim = c(ymin,ymax),
+         zlim = c(zmin,zmax), col = filled_cells_col$color.name, lwd = 0.1)
+  surface3d(x = unique(sites1_data[["T21_dat"]]$T1),
+            y = unique(sites1_data[["T21_dat"]]$T2),
+            z = matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
+                       nrow = 50, ncol = 50),
+            alpha = 0.5, lit = FALSE, front = "lines", back = "lines")
+  surface3d(x = unique(sites1_data[["T21_dat"]]$T1),
+            y = unique(sites1_data[["T21_dat"]]$T2),
+            z = matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
+                       nrow = 50, ncol = 50),
+            color = T21_col_mat, smooth = FALSE, lit = FALSE)
+  surface3d(x = rep(min(sites1_data[["T21_dat"]]$T1),50),
+            y = unique(sites1_data[["T21_dat"]]$T2),
+            z = matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
+                       nrow = 50, ncol = 50),
+            alpha = 0.5, lit = FALSE, front = "lines", back = "lines")
+  surface3d(x = rep(min(sites1_data[["T21_dat"]]$T1),50),
+            y = unique(sites1_data[["T21_dat"]]$T2),
+            z = matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
+                       nrow = 50, ncol = 50),
+            color = T31_col_mat,lit = FALSE, smooth = FALSE)
+  surface3d(x = unique(sites1_data[["T21_dat"]]$T1),
+            y = rep(min(sites1_data[["T21_dat"]]$T2),50),
+            z = t(matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
+                         nrow = 50, ncol = 50)),
+            alpha = 0.5, lit = FALSE, front = "lines", back = "lines")
+  surface3d(x = unique(sites1_data[["T21_dat"]]$T1),
+            y = rep(min(sites1_data[["T21_dat"]]$T2),50),
+            z = t(matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
+                         nrow = 50, ncol = 50)),
+            color = T23_col_mat, lit = FALSE, smooth = FALSE)
+  title3d(main = "3D_TPD_Plot", xlab = T2lab, ylab = T1lab, zlab = T3lab)
+  
+  
+}
+
+TPD_Diff_Func(sites1 = primary,sites2 = secondary,data = PREDICTS_tpds, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body")
 
 
 

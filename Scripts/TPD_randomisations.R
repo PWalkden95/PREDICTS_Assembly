@@ -25,17 +25,9 @@ trait_range_calc <- function(range, traits){
   return(trait_ranges)
 }
 
-trait_ranges <- trait_range_calc(range = 0.15, traits = TPD_traits$complete_traits)
+
 #################################
 
-
-### species rownames sites colnames
-
-mean_TPD_randomisations <- list()
-
-eval_grid <- TPDs(TPD_traits$complete_traits[c(1:14),1], TPD_traits$complete_traits[c(1:14),c(2:4)], trait_ranges = trait_ranges)
-
-mean_TPD_randomisations$evaluation_grid <- eval_grid$data$evaluation_grid
 
 
 # registerDoParallel(cores = 2)
@@ -45,12 +37,19 @@ mean_TPD_randomisations$evaluation_grid <- eval_grid$data$evaluation_grid
 #                                                .packages = c("tidyverse", "TPD"),
 #                                                .inorder = FALSE) %dopar% {} 
 
-TPD_randomisations_func <- function(list){
+list <- randomisations[[1]]
+traits <- "foraging"
+
+TPD_randomisations_func <- function(list, traits){
   
   site_name <- substr(colnames(list)[3],1,nchar(colnames(list)[3])-9)
   
   comm_sp <- unique(c(as.matrix(list[,-1])))
   
+  if(traits == "morpho"){
+  
+    trait_ranges <- trait_range_calc(range = 0.15, traits = TPD_traits$complete_traits)
+    
   mtpd <- FALSE
   if(any(comm_sp %in% c(TPD_traits$partial_traits$Birdlife_Name,TPD_traits$single_traits$Birdlife_Name))){
     mtpd <- TRUE
@@ -67,6 +66,8 @@ TPD_randomisations_func <- function(list){
   
   comm_traits <- TPD_traits[["complete_traits"]] %>% dplyr::filter(Birdlife_Name %in% comm_sp)
   
+  
+  
   trait_density <- TPDs(species = comm_traits[,1], traits = comm_traits[,c(2:4)], trait_ranges = trait_ranges)
   
   
@@ -75,6 +76,22 @@ TPD_randomisations_func <- function(list){
     trait_density$TPDs <- c(trait_density$TPDs,mean_TPD$TPDs)
     trait_density$data$traits <- rbind(trait_density$data$traits, mean_TPD$data$means)
   }
+  
+  } 
+  
+  if(traits == "foraging"){
+    trait_ranges <- trait_range_calc(for_traits[["foraging_traits"]][["PCoA_Scores"]], range = 0.15)
+    
+    
+    
+    comm_traits <- for_traits[["foraging_traits"]][["PCoA_Scores"]] %>% dplyr::filter(Birdlife_Name %in% comm_sp)
+  
+    trait_density <- TPDsMean(species = comm_traits[,1], means = comm_traits[,c(2:4)], sds = matrix(rep(sds,nrow(comm_traits)), ncol = 3, byrow = TRUE),
+                         trait_ranges = trait_ranges)
+    
+    }
+  
+  
   
   comm_mat <-  matrix(rep(0,length(comm_sp)*100), nrow = length(comm_sp),ncol = 1000)
   
@@ -107,11 +124,44 @@ require(future.apply)
 
 plan(multicore(workers = 8))
 
-TPD_randomisations_list <- future_lapply(randomisations,TPD_randomisations_func)
+####morpho list
 
-TPD_randomisations <- c(mean_TPD_randomisations,TPD_randomisations_list)
+mean_TPD_randomisations_morpho <- list()
 
-write_rds(file = "Outputs/randomisations_TPD.rds", TPD_randomisations)
+trait_ranges <- trait_range_calc(range = 0.15, traits = TPD_traits$complete_traits)
+
+eval_grid <- TPDs(TPD_traits$complete_traits[c(1:14),1], TPD_traits$complete_traits[c(1:14),c(2:4)], trait_ranges = trait_ranges)
+
+mean_TPD_randomisations_morpho$evaluation_grid <- eval_grid$data$evaluation_grid
+
+
+TPD_randomisations_list <- future_lapply(randomisations[1:8],TPD_randomisations_func, traits = "morpho")
+
+TPD_randomisations_morpho <- c(mean_TPD_randomisations_morpho,TPD_randomisations_list)
+
+##### foraging list
+
+rm(TPD_randomisations_list)
+
+mean_TPD_randomisations_foraging <- list()
+
+trait_ranges <- trait_range_calc(range = 0.15, traits = for_traits[["foraging_traits"]][["PCoA_Scores"]])
+sds <- sqrt(diag(Hpi.diag(for_traits[["foraging_traits"]][["PCoA_Scores"]][,c(2:4)])))
+
+
+eval_grid <- TPDsMean(species = for_traits[["foraging_traits"]][["PCoA_Scores"]][c(1:14),1], 
+                      means = for_traits[["foraging_traits"]][["PCoA_Scores"]][c(1:14),c(2:4)], 
+                      sds = matrix(rep(sds,14), ncol = 3, byrow = TRUE),
+                      trait_ranges = trait_ranges)
+
+mean_TPD_randomisations_foraging$evaluation_grid <- eval_grid$data$evaluation_grid
+
+TPD_randomisations_list <- future_lapply(randomisations[1:8],TPD_randomisations_func, traits = "foraging")
+
+TPD_randomisations_foraging <- c(mean_TPD_randomisations_foraging,TPD_randomisations_list)
+
+write_rds(file = "Outputs/randomisations_TPD_for.rds", TPD_randomisations_foraging)
+write_rds(file = "Outputs/randomisations_TPD_morpho.rds", TPD_randomisations_morpho)
   
 closeAllConnections()
 
