@@ -11,7 +11,10 @@ randomisations <- readRDS("Outputs/site_randomisations.rds")
 PREDICTS <- readRDS("Outputs/refined_predicts.rds")
 TPD_traits <- readRDS("Outputs/full_morpho_traits_list.rds")
 for_traits <- readRDS("Outputs/predicts_foraging_pcoa.rds")
+PREDICTS_TPD <- readRDS("Outputs/PREDICTS_sites_tpds.rds")
 
+
+randomisations <- randomisations[which(names(randomisations) %in% names(PREDICTS_TPD))]
 
 trait_range_calc <- function(range, traits){
   
@@ -19,6 +22,8 @@ trait_range_calc <- function(range, traits){
   n_range_3 <- dist(c(min(traits[,3]),max(traits[,3])))[1]
   n_range_4 <- dist(c(min(traits[,4]),max(traits[,4])))[1]
   
+  #######################################
+  #####################################
   trait_ranges <- list(c(min(traits[,2]) -(range * n_range_2),max(traits[,2]) + (range * n_range_2)),
                        c(min(traits[,3]) -(range * n_range_3),max(traits[,3]) + (range * n_range_3)),
                        c(min(traits[,4]) -(range * n_range_4),max(traits[,4]) + (range * n_range_4)))
@@ -38,7 +43,7 @@ trait_range_calc <- function(range, traits){
 #                                                .inorder = FALSE) %dopar% {} 
 
 list <- randomisations[[1]]
-traits <- "foraging"
+traits <- "morpho"
 
 TPD_randomisations_func <- function(list, traits){
   
@@ -113,6 +118,11 @@ TPD_randomisations_func <- function(list, traits){
   
   ran_com_TPD <- TPDc(trait_density,sampUnit = t(comm_mat))
   
+  #ran_com_TPD$TPDc$TPDc <- c(ran_com_TPD$TPDc$TPDc,PREDICTS_TPD[[which(names(PREDICTS_TPD) == site_name)]][["TPDc"]])
+
+  #test <- dissim(ran_com_TPD)
+  
+    
 mean_TPDc_mat <- as.numeric(ran_com_TPD$TPDc$TPDc$Randomisation_Comm)
 
 return(mean_TPDc_mat)
@@ -164,5 +174,4 @@ write_rds(file = "Outputs/randomisations_TPD_for.rds", TPD_randomisations_foragi
 write_rds(file = "Outputs/randomisations_TPD_morpho.rds", TPD_randomisations_morpho)
   
 closeAllConnections()
-
 
