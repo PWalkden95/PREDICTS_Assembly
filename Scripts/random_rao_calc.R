@@ -11,6 +11,7 @@ PREDICTS <- readRDS("Outputs/refined_predicts.rds")
 source("Functions/PREDICTS_rao_func.R")
 
 
+
 random_FD_calc <- function(list){
   
   site_name <- substr(colnames(list)[3],1,nchar(colnames(list)[3])-9)
@@ -50,15 +51,16 @@ ses <- lapply(randomisations,random_FD_calc)
 write_rds(ses, file = "Outputs/randomisations_raos_q.rds")
 ses <- readRDS("Outputs/randomisations_raos_q.rds")
 
-PREDICTS <- readRDS("Outputs/refined_predicts.rds") %>% dplyr::select(SSBS,SS,Predominant_habitat,Use_intensity, Biome) %>%
+PREDICTS <- readRDS("Outputs/refined_predicts.rds") %>% dplyr::select(SSBS,SS,Predominant_habitat,Use_intensity, Biome, UN_subregion) %>%
   distinct(SSBS,SS,Predominant_habitat,Use_intensity, .keep_all = TRUE)
-drop_sites <- PREDICTS %>% dplyr::filter(Predominant_habitat == "Cannot decide") %>% pull(SSBS) %>% as.character()
+drop_sites <- PREDICTS %>% dplyr::filter(Predominant_habitat == "Cannot decide" | Use_intensity == "Cannot decide") %>% pull(SSBS) %>% as.character()
 
 ses <- ses[-which(names(ses)%in%drop_sites)]
 
 
 
-ses_scores <- data.frame(SSBS = names(randomisations)) %>% dplyr::left_join(PREDICTS) %>% filter(Predominant_habitat != "Cannot decide")
+ses_scores <- data.frame(SSBS = names(randomisations)) %>% dplyr::left_join(PREDICTS) %>% filter(Predominant_habitat != "Cannot decide",
+                                                                                                 Use_intensity != "Cannot decide")
 ses_scores$ses <- unlist(ses) 
 
 ses_scores <- ses_scores %>% dplyr::mutate(Predominant_habitat = ifelse(grepl(Predominant_habitat, pattern = "Primary"),
@@ -82,7 +84,9 @@ require(lme4)
 
 
 table(ses_scores$Predominant_habitat)
+table
 
-test <- lmer(ses ~ LUI + Biome + (1|SS), data = ses_scores) 
+
+test <- lmer(ses ~ LUI + Biome + UN_subregion + LUI:UN_subregion + LUI:Biome + (1|SS), data = ses_scores) 
 
 summary(test)

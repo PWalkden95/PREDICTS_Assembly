@@ -6,7 +6,7 @@
 
 ###  Infographic plot to exemplify the characterisation and occupancy of trait space 
 
-rm(list = ls())
+
 
 require(gstat)
 require(sf)
@@ -18,11 +18,11 @@ require(rgl) ## 3D plotting
 options(rgl.printRglwidget = TRUE)
 
 ## loading in our TPDs and PREDICTS database -- PREDICTS will be used to get the site land-use classifications for sites that can be combined within study
-
-PREDICTS_tpds <- readRDS("Outputs/PREDICTS_sites_tpds.rds")
-PREDICTS_tpds_for <- readRDS("Outputs/PREDICTS_sites_for_tpds.rds")
-PREDICTS <- readRDS("Outputs/refined_predicts.rds") %>% dplyr::distinct(SSBS, Predominant_habitat, Use_intensity)
-
+# 
+# PREDICTS_tpds <- readRDS("Outputs/PREDICTS_sites_tpds.rds")
+# PREDICTS_tpds_for <- readRDS("Outputs/PREDICTS_sites_for_tpds.rds")
+# PREDICTS <- readRDS("Outputs/refined_predicts.rds") %>% dplyr::distinct(SSBS, Predominant_habitat, Use_intensity)
+# 
 
 ### function to plot a 2D plot of pairwise trait axes input is a matrix with three columns the first two being trait axes values labelled T1 and T2,
 ### the third column being the TPD probability of occupancy
@@ -254,6 +254,8 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
        dist(c(ymin,ymax))[1],
        dist(c(zmin,zmax))[1])) / 100
   
+  
+  clear3d()
   rgl.viewpoint(theta = 50,phi = 25, zoom = 13/16)
   plot3d(x, y, z, box = FALSE,xlab = "",ylab = "",zlab = "",
          type ="s", radius = scale,alpha = 0.8, xlim = c(xmin,xmax),
@@ -299,25 +301,25 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
 
 
 
-sites_lu <- data.frame(SSBS= names(PREDICTS_tpds)) %>% dplyr::left_join(PREDICTS[,c("SSBS","Predominant_habitat","Use_intensity")])
+# sites_lu <- data.frame(SSBS= names(PREDICTS_tpds)) %>% dplyr::left_join(PREDICTS[,c("SSBS","Predominant_habitat","Use_intensity")])
+# 
+# primary <- sites_lu %>% dplyr::filter(grepl(Predominant_habitat, pattern = "Primary")) %>% pull(SSBS)
+# 
+# 
+# 
+# TPD_3d_plot(sites = primary,data = PREDICTS_tpds, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body")
+# 
+# #####################################################
+# #####################################################
+# ## SD plot showing the difference between two set of sites 
+# 
+# secondary <- sites_lu %>% dplyr::filter(grepl(Predominant_habitat, pattern = "secondary",ignore.case = TRUE)) %>% pull(SSBS)
+# 
+# data <- PREDICTS_tpds
+# sites1 <- primary
+# sites2 <- secondary
 
-primary <- sites_lu %>% dplyr::filter(grepl(Predominant_habitat, pattern = "Primary")) %>% pull(SSBS)
-
-
-
-TPD_3d_plot(sites = primary,data = PREDICTS_tpds, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body")
-
-#####################################################
-#####################################################
-## SD plot showing the difference between two set of sites 
-
-secondary <- sites_lu %>% dplyr::filter(grepl(Predominant_habitat, pattern = "secondary",ignore.case = TRUE)) %>% pull(SSBS)
-
-data <- PREDICTS_tpds
-sites1 <- primary
-sites2 <- secondary
-
-TPD_Diff_Func <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
+TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
   
   sites1_data <- TPD_plot_data(data,sites1)
   sites2_data <- TPD_plot_data(data,sites2)
@@ -515,7 +517,7 @@ TPD_Diff_Func <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
                   dist(c(ymin,ymax))[1],
                   dist(c(zmin,zmax))[1])) / 100
   
-  
+  clear3d()
   rgl.viewpoint(theta = 50,phi = 25, zoom = 13/16)
   plot3d(x, y, z, box = FALSE,xlab = "",ylab = "",zlab = "",
          type ="s", radius = scale,alpha = 0.8, xlim = c(xmin,xmax),
@@ -556,7 +558,7 @@ TPD_Diff_Func <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
   
 }
 
-TPD_Diff_Func(sites1 = primary,sites2 = secondary,data = PREDICTS_tpds, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body")
+#TPD_Diff_plot(sites1 = primary,sites2 = secondary,data = PREDICTS_tpds, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body")
 
 
 

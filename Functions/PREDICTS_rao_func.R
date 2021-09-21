@@ -48,7 +48,7 @@ Rao_Q_Func_bias <- function(data, traits){
     spp_traits <- spp_traits[,-1] %>% as.matrix()
   }
   
-  source("C:/Users/patri/OneDrive - Imperial College London/Work/Biology/(2020-_Natural_History_Museum/PhD_Code/PREDICTS_Assembly/Functions/rao_diversity_gaw.R")
+  source("../PREDICTS_Assembly/Functions/rao_diversity_gaw.R")
   
   Rao_Bias <- rao_diversity_gaw(comm = t(Species_abundance),traits =  spp_traits)#THIS is using the package SYNCSA that calcuates Rao's using gowdis 
   
