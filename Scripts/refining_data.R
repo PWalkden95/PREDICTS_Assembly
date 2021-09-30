@@ -6,7 +6,7 @@ require(gtools)
 
 ######### Load in PREDICTS dtaaset with Birdlife taxonomy and traits
 
-PREDICTS_Aves <- readRDS("../PREDICTS_Taxonomy/PREDICTS_BL_traits.rds")
+PREDICTS_Aves <- readRDS("../PREDICTS_Taxonomy/PREDICTS_BL_traits_out.rds")
 
 ### For the study we would  like to have abundance recorded sites with greater than 1 species & is focussed on birds or surveys the
 ### entire community to ensure that survey is capturing the bird community to the fullest extent - those focussed on specific species
@@ -85,7 +85,7 @@ refine_data <- refine_data %>% dplyr::mutate(Use_intensity = ifelse(SS == "DL1_2
                                                                    "Minimal use",paste(Use_intensity)),
                                             Use_intensity = ifelse(SS == "DL1_2012__Dallimer 1" & Predominant_habitat == "Secondary vegetation (indeterminate age)",
                                                                    "Minimal use",paste(Use_intensity)),
-                                            Use_intensity = ifelse(SSBS == c("TN1_2006__Soh 1 Cameron 1","TN1_2006__Soh 1 Fraser 6") ,
+                                            Use_intensity = ifelse(SSBS %in% c("TN1_2006__Soh 1 Cameron 1","TN1_2006__Soh 1 Fraser 6") ,
                                                                    "Minimal use",paste(Use_intensity)),
                                             Use_intensity = ifelse(SS == "AD1_2012__Yamaura 1" & Predominant_habitat == "Pasture",
                                                                    "Light use",paste(Use_intensity)),
