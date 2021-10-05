@@ -42,8 +42,6 @@ trait_range_calc <- function(range, traits){
 #                                                .packages = c("tidyverse", "TPD"),
 #                                                .inorder = FALSE) %dopar% {} 
 
-list <- randomisations[[1]]
-traits <- "morpho"
 
 TPD_randomisations_func <- function(list, traits){
   

@@ -20,7 +20,7 @@ TPD_data <- data.frame(PREDICTS) %>% filter(!(Birdlife_Name %in% drop_spp)) %>%
   ### calculating a hypervolume in 3 dimensions with fewer than 21 species on result in inaccurcies 
   group_by(SSBS) %>% dplyr::mutate(Site_spp = n_distinct(Birdlife_Name),TotalSiteAbundance = sum(SpeciesSiteAbundance)) %>%
   
-  filter(Site_spp > 22) %>% ungroup() %>%
+  ungroup() %>%
   
   dplyr::mutate(RelativeAbundance = SpeciesSiteAbundance/TotalSiteAbundance) %>%
   
@@ -30,7 +30,7 @@ TPD_data <- data.frame(PREDICTS) %>% filter(!(Birdlife_Name %in% drop_spp)) %>%
   
   data.frame()
 
-PRED_sites <- as.character(unique(TPD_data$SSBS))
+
 
 trait_range_calc <- function(range, traits){
   
@@ -48,13 +48,26 @@ trait_range_calc <- function(range, traits){
 trait_ranges <- trait_range_calc(range = 0.15,traits = TPD_traits$complete_traits)
 
 
+#### create list of community data
+
+
+
+PRED_sites <- rep(list(NA),length(unique(TPD_data$SSBS)))
+i <- 1
+for(sit in as.character(unique(TPD_data$SSBS))){
+  comm_dat <- TPD_data %>% dplyr::filter(SSBS == sit) %>% dplyr::select(Birdlife_Name, RelativeAbundance)
+  PRED_sites[[i]] <- comm_dat
+  names(PRED_sites)[i] <- sit
+  i <- i +1
+}
+
+
 
 PREDICTS_TPD <- function(site){
 
 
-comm <- TPD_data %>% dplyr::filter(SSBS == site) %>% dplyr::select(Birdlife_Name, RelativeAbundance)
 
-comm_sp <- comm$Birdlife_Name
+comm_sp <- site$Birdlife_Name
 
 mtpd <- FALSE
 if(any(comm_sp %in% c(TPD_traits$partial_traits$Birdlife_Name,TPD_traits$single_traits$Birdlife_Name))){
@@ -82,7 +95,7 @@ if(mtpd){
   }
 
 
-comm <- comm %>% set_rownames(comm$Birdlife_Name) %>% dplyr::select(RelativeAbundance)
+comm <- site %>% set_rownames(site$Birdlife_Name) %>% dplyr::select(RelativeAbundance)
 
 
 Comm_tpd <- TPDc(TPDs = trait_density, sampUnit = t(comm))
@@ -93,9 +106,14 @@ return(Comm_tpd)
 
 }
 
+require(future)
+require(future.apply)
 
-PREDICTS_tpds <- lapply(PRED_sites,PREDICTS_TPD)
-names(PREDICTS_tpds) <- PRED_sites
+plan(multicore(workers = 8))
+
+
+PREDICTS_tpds <- future_lapply(PRED_sites,PREDICTS_TPD)
+
 
 
 write_rds(file = "Outputs/PREDICTS_sites_tpds.rds", x = PREDICTS_tpds)
@@ -116,17 +134,17 @@ trait_ranges <- trait_range_calc(range = 0.15, traits = for_traits[["foraging_tr
 PREDICTS_TPD_forage <- function(site){
   
   
-  comm <- TPD_data %>% dplyr::filter(SSBS == site) %>% dplyr::select(Birdlife_Name, RelativeAbundance)
   
-  comm_sp <- comm$Birdlife_Name
+  
+  comm_sp <- site$Birdlife_Name
   
   for_TPD_dat <- for_traits[["foraging_traits"]][["PCoA_Scores"]] %>% dplyr::filter(Birdlife_Name %in% comm_sp)
     
-  mean_TPD <- TPDsMean(species = for_TPD_dat[,1], means = for_TPD_dat[,c(2:4)], sds = matrix(rep(sds,nrow(comm)), ncol = 3, byrow = TRUE),
+  mean_TPD <- TPDsMean(species = for_TPD_dat[,1], means = for_TPD_dat[,c(2:4)], sds = matrix(rep(sds,nrow(site)), ncol = 3, byrow = TRUE),
                        trait_ranges = trait_ranges)
   
   
-  comm <- comm %>% set_rownames(comm$Birdlife_Name) %>% dplyr::select(RelativeAbundance)
+  comm <- site %>% set_rownames(site$Birdlife_Name) %>% dplyr::select(RelativeAbundance)
   
   
   Comm_tpd <- TPDc(TPDs = mean_TPD, sampUnit = t(comm))
@@ -138,12 +156,13 @@ PREDICTS_TPD_forage <- function(site){
 }
 
 
-For_PREDICTS_tpds <- lapply(PRED_sites,PREDICTS_TPD_forage)
-names(For_PREDICTS_tpds) <- PRED_sites
+For_PREDICTS_tpds <- future_lapply(PRED_sites[1:8],PREDICTS_TPD_forage)
+
 
 
 write_rds(For_PREDICTS_tpds, file = "Outputs/PREDICTS_sites_for_tpds.rds")
 
 
 
+closeAllConnections()
 
