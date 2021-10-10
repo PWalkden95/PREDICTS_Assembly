@@ -43,7 +43,7 @@ trait_range_calc <- function(range, traits){
 #                                                .inorder = FALSE) %dopar% {} 
 
 
-TPD_randomisations_func <- function(list, traits){
+TPD_randomisations_func <- function(list, traits, method){
   
   site_name <- substr(colnames(list)[3],1,nchar(colnames(list)[3])-9)
   
@@ -53,6 +53,8 @@ TPD_randomisations_func <- function(list, traits){
   
     trait_ranges <- trait_range_calc(range = 0.15, traits = TPD_traits$complete_traits)
     
+    
+    if(method == "sds"){
   mtpd <- FALSE
   if(any(comm_sp %in% c(TPD_traits$partial_traits$Birdlife_Name,TPD_traits$single_traits$Birdlife_Name))){
     mtpd <- TRUE
@@ -80,6 +82,14 @@ TPD_randomisations_func <- function(list, traits){
     trait_density$data$traits <- rbind(trait_density$data$traits, mean_TPD$data$means)
   }
   
+    }
+  
+    if(method == "bandwidth"){
+      mean_TPD_dat <- TPD_traits$full_bandwidth_traits %>% dplyr::filter(Birdlife_Name %in% comm_sp) %>% data.frame()
+      trait_density <- TPDsMean(comm_sp = mean_TPD_dat[,1], means = mean_TPD_dat[,c(2,4,6)], sds = mean_TPD_dat[,c(3,5,7)], trait_ranges = trait_ranges)
+    }
+    
+    
   } 
   
   if(traits == "foraging"){

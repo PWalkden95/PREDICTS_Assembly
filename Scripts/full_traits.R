@@ -362,6 +362,19 @@ f_traits$partial_traits <- p_traits
 
 f_traits$single_traits <- s_traits
 
+################################################
+###############################################
+## ALSO GOING TO ADD ANOTHER LIST FOR ALL SPECIES BANDWIDTHS BEING DETERMINDED BY THE PLUGIN BAND WIDTH
+
+
+f_s_traits <-  Full_PCA_Score %>% dplyr::group_by(Birdlife_Name) %>% 
+  dplyr::summarise(loco_mean = mean(locomotion), loco_sd = mean_trait_sds[1],
+                   for_mean = mean(foraging), for_sd =  mean_trait_sds[2],
+                   body_mean = mean(body), body_sd = mean_trait_sds[3]) %>% data.frame()
+
+
+f_traits$full_bandwidth_traits <- f_s_traits
+
 ######## write the list for later use 
 
 write_rds(file = "Outputs/full_morpho_traits_list.rds", x = f_traits)

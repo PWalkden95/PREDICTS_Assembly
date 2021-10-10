@@ -61,7 +61,73 @@ for(sit in as.character(unique(TPD_data$SSBS))){
   i <- i +1
 }
 
+#############################################################################################################
+#############################################################################################################
+# Get every species TPDs so that we can compare gaps to species in the future
 
+
+species_TPD <- function(species,method = c("bandwidth","sds")){
+  
+  if(method == "sds"){
+  mtpd <- FALSE
+  if(any(species %in% c(TPD_traits$partial_traits$Birdlife_Name,TPD_traits$single_traits$Birdlife_Name))){
+    mtpd <- TRUE
+    Mean_sp <- species[which(species %in% c(TPD_traits$partial_traits$Birdlife_Name,TPD_traits$single_traits$Birdlife_Name))]
+    
+    all_partial <- rbind(TPD_traits$partial_traits,TPD_traits$single_traits)
+    
+    mean_TPD_dat <- all_partial %>% dplyr::filter(Birdlife_Name %in% Mean_sp) %>% data.frame()
+    
+    
+    mean_TPD <- TPDsMean(species = mean_TPD_dat[,1], means = mean_TPD_dat[,c(2,4,6)], sds = mean_TPD_dat[,c(3,5,7)], trait_ranges = trait_ranges)
+    
+  }
+  
+  comm_traits <- TPD_traits[["complete_traits"]] %>% dplyr::filter(Birdlife_Name %in% species)
+  
+  trait_density <- TPDs(species = comm_traits[,1], traits = comm_traits[,c(2:4)], trait_ranges = trait_ranges)
+  
+  
+  if(mtpd){
+    trait_density$data$species <- c(trait_density$data$species,mean_TPD$data$species)
+    trait_density$TPDs <- c(trait_density$TPDs,mean_TPD$TPDs)
+    trait_density$data$traits <- rbind(trait_density$data$traits, mean_TPD$data$means)
+  }
+  
+  }
+  
+  if(method == "bandwidth"){
+    mean_TPD_dat <- TPD_traits$full_bandwidth_traits %>% dplyr::filter(Birdlife_Name %in% species) %>% data.frame()
+    trait_density <- TPDsMean(species = mean_TPD_dat[,1], means = mean_TPD_dat[,c(2,4,6)], sds = mean_TPD_dat[,c(3,5,7)], trait_ranges = trait_ranges)
+  }
+  
+  
+  
+  return(trait_density)
+}
+
+#####################################
+# All species
+
+all_sp <- unique(unlist(TPD_traits$full_bandwidth_traits$Birdlife_Name))
+
+species_trait_density <- species_TPD(species = all_sp, method = "sds")
+
+eval_grid <- species_trait_density$data$evaluation_grid %>% set_colnames(c("locomotion","foraging","body"))
+
+for(sp in names(species_trait_density$TPDs)){
+  data <- data.frame(eval_grid,prob = species_trait_density[["TPDs"]][[sp]]) %>% dplyr::filter(prob != 0)
+  species_trait_density[["TPDs"]][[sp]] <- data
+}
+
+
+
+
+write_rds(file = "Outputs/species_tpds_morpho.rds", species_trait_density)
+
+
+##############################################################################
+###########################################################################
 
 PREDICTS_TPD <- function(site){
 
@@ -69,30 +135,7 @@ PREDICTS_TPD <- function(site){
 
 comm_sp <- site$Birdlife_Name
 
-mtpd <- FALSE
-if(any(comm_sp %in% c(TPD_traits$partial_traits$Birdlife_Name,TPD_traits$single_traits$Birdlife_Name))){
-  mtpd <- TRUE
-  Mean_sp <- comm_sp[which(comm_sp %in% c(TPD_traits$partial_traits$Birdlife_Name,TPD_traits$single_traits$Birdlife_Name))]
-
-  all_partial <- rbind(TPD_traits$partial_traits,TPD_traits$single_traits)
-  
-  mean_TPD_dat <- all_partial %>% dplyr::filter(Birdlife_Name %in% Mean_sp) %>% data.frame()
-  
-  
-  mean_TPD <- TPDsMean(species = mean_TPD_dat[,1], means = mean_TPD_dat[,c(2,4,6)], sds = mean_TPD_dat[,c(3,5,7)], trait_ranges = trait_ranges)
-  
-  }
-
-comm_traits <- TPD_traits[["complete_traits"]] %>% dplyr::filter(Birdlife_Name %in% comm_sp)
-
-trait_density <- TPDs(species = comm_traits[,1], traits = comm_traits[,c(2:4)], trait_ranges = trait_ranges)
-
-
-if(mtpd){
-  trait_density$data$species <- c(trait_density$data$species,mean_TPD$data$species)
-  trait_density$TPDs <- c(trait_density$TPDs,mean_TPD$TPDs)
-  trait_density$data$traits <- rbind(trait_density$data$traits, mean_TPD$data$means)
-  }
+trait_density <- species_TPD(comm_sp, method = "bandwidth")
 
 
 comm <- site %>% set_rownames(site$Birdlife_Name) %>% dplyr::select(RelativeAbundance)
@@ -133,16 +176,12 @@ trait_ranges <- trait_range_calc(range = 0.15, traits = for_traits[["foraging_tr
 
 PREDICTS_TPD_forage <- function(site){
   
-  
-  
-  
   comm_sp <- site$Birdlife_Name
   
   for_TPD_dat <- for_traits[["foraging_traits"]][["PCoA_Scores"]] %>% dplyr::filter(Birdlife_Name %in% comm_sp)
     
   mean_TPD <- TPDsMean(species = for_TPD_dat[,1], means = for_TPD_dat[,c(2:4)], sds = matrix(rep(sds,nrow(site)), ncol = 3, byrow = TRUE),
                        trait_ranges = trait_ranges)
-  
   
   comm <- site %>% set_rownames(site$Birdlife_Name) %>% dplyr::select(RelativeAbundance)
   

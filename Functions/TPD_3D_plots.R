@@ -127,16 +127,26 @@ TPD_plot_data <- function(data,site){
 # constructing this plot comes in a number of stages and requires the use of the rgl package 
 
 
-TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
+TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab, method){
   
   data_3d <- TPD_plot_data(data,sites)
   
   # first identify which cells in 3D space are occupied 
   
   filled_cells <- data_3d[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>%
-    dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% filter(!is.na(prob)) %>% data.frame
+    dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% filter(!is.na(prob)) %>% data.frame()
   
   filled_cells <- percentile_cells(filled_cells)
+  
+  if(method == "prob"){
+    filled_cells <- filled_cells %>% dplyr::rename(value = prob)
+    my.colors <- colorRampPalette(c("white", "orange", "green", "darkgreen"))
+    my_colour_2 <- colorRampPalette(c("yellow","orange","red"))
+  } else {
+    filled_cells <- filled_cells %>% dplyr::rename(value = percentile)
+    my.colors <- colorRampPalette(c("darkgreen", "green", "orange", "white"))
+    my_colour_2 <- colorRampPalette(c("red","orange","yellow"))
+  }
   
   
   x <- filled_cells$T2
@@ -144,12 +154,12 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
   z <- filled_cells$T3
   
   
-  my.colors<-colorRampPalette(c("darkgreen", "green", "orange", "white")) #creates a function my.colors which interpolates n colors between blue, white and red
-  color.df<-data.frame(percentile=filled_cells$percentile[order(filled_cells$percentile)], color.name=my.colors(length(filled_cells$percentile))) %>% distinct(percentile,.keep_all = TRUE)#generates 2001 colors from the color ramp
+   #creates a function my.colors which interpolates n colors between blue, white and red
+  color.df<-data.frame(value=filled_cells$value[order(filled_cells$value)], color.name=my.colors(length(filled_cells$value))) %>% distinct(value,.keep_all = TRUE)#generates 2001 colors from the color ramp
   filled_cells_col <- filled_cells %>% dplyr::left_join(color.df)
   
   
-  my_colour_2 <- colorRampPalette(c("red","orange","yellow"))
+  
   
   #####################################
   
@@ -168,7 +178,10 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
   colnames(T21_col) <- unique(data_3d[["T21_dat"]]$T2)
   
   for(i in 1:nrow(data_3d[["T21_dat"]])){
-    T21_col[as.character(data_3d[["T21_dat"]][i,1]),as.character(data_3d[["T21_dat"]][i,2])] <- data_3d[["T21_dat"]][i,4]
+    T21_col[as.character(data_3d[["T21_dat"]][i,1]),as.character(data_3d[["T21_dat"]][i,2])] <- ifelse(method == "prob",
+                                                                                                       data_3d[["T21_dat"]][i,3],
+                                                                                                       data_3d[["T21_dat"]][i,4])
+                                                                                                       
   }
   
   T21_vals <- T21_col[which(!is.na(T21_col))]
@@ -200,7 +213,9 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
   colnames(T31_col) <- unique(data_3d[["T31_dat"]]$T2)
   
   for(i in 1:nrow(data_3d[["T31_dat"]])){
-    T31_col[as.character(data_3d[["T31_dat"]][i,1]),as.character(data_3d[["T31_dat"]][i,2])] <- data_3d[["T31_dat"]][i,4]
+    T31_col[as.character(data_3d[["T31_dat"]][i,1]),as.character(data_3d[["T31_dat"]][i,2])] <- ifelse(method == "prob",
+                                                                                                       data_3d[["T31_dat"]][i,3],
+                                                                                                       data_3d[["T31_dat"]][i,4])
   }
   
   
@@ -239,7 +254,9 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
   colnames(T23_col) <- unique(data_3d[["T23_dat"]]$T2)
   
   for(i in 1:nrow(data_3d[["T23_dat"]])){
-    T23_col[as.character(data_3d[["T23_dat"]][i,1]),as.character(data_3d[["T23_dat"]][i,2])] <- data_3d[["T23_dat"]][i,4]
+    T23_col[as.character(data_3d[["T23_dat"]][i,1]),as.character(data_3d[["T23_dat"]][i,2])] <- ifelse(method == "prob",
+                                                                                                       data_3d[["T23_dat"]][i,3],
+                                                                                                       data_3d[["T23_dat"]][i,4])
   }
   
   
@@ -317,8 +334,8 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
 }
 
 
-# 
-# 
+
+
 # sites_lu <- data.frame(SSBS= names(PREDICTS_tpds)) %>% dplyr::left_join(PREDICTS[,c("SSBS","Predominant_habitat","Use_intensity")])
 # 
 # primary <- sites_lu %>% dplyr::filter(grepl(Predominant_habitat, pattern = "Primary")) %>% pull(SSBS)
@@ -336,8 +353,10 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab){
 # data <- PREDICTS_tpds
 # sites1 <- primary
 # sites2 <- secondary
+# method <- "prob"
 
-TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
+
+TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab,method){
   
   ### extract the TPD data for teh two sets of sites 
   
@@ -356,6 +375,25 @@ TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
   
   filled_cells_2 <- percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile)
   
+  
+  if(method == "prob"){
+    filled_cells_1 <- filled_cells_1 %>% dplyr::rename(value = prob)
+    filled_cells_2 <- filled_cells_2 %>% dplyr::rename(value_2 = prob_2)
+    my.colors_high <-colorRampPalette(c("blue", "steelblue4", "steelblue1", "lightskyblue1"))
+    my.colors_low <-colorRampPalette(c("tomato", "orangered", "orangered4", "red"))
+    my_colour_2p <- colorRampPalette(c("blue","steelblue1","lightskyblue1"))
+    my_colour_2n <- colorRampPalette(c("yellow","orange","red"))
+  } else {
+    filled_cells_1 <- filled_cells_1 %>% dplyr::rename(value = percentile)
+    filled_cells_2 <- filled_cells_2 %>% dplyr::rename(value_2 = percentile_2)
+    my.colors_high <-colorRampPalette(c("lightskyblue1", "steelblue1", "steelblue4", "blue"))
+    my.colors_low <-colorRampPalette(c("red", "orangered4", "orangered", "tomato")) 
+    my_colour_2p <- colorRampPalette(c("lightskyblue1","steelblue1","blue"))
+    my_colour_2n <- colorRampPalette(c("red","orange","yellow"))
+  }
+  
+  
+  
   ####################################
   # WORK OUT THE DIFFERENCE ##########
   ####################################
@@ -366,12 +404,12 @@ TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
 
   ##### work out with difference in prob/percentile of cells and whether the occupancy of the cell is new (functional gain) or lost (functional loss)
   
-    cells_frame <- filled_cells_2 %>% dplyr::left_join(filled_cells_1, by = c("T1","T2","T3")) %>% dplyr::filter(is.na(percentile)) %>%
-      dplyr::relocate(percentile, .before = percentile_2) %>% rbind(diff_cells) %>% dplyr::mutate(lost_cell = ifelse(is.na(percentile_2),TRUE,FALSE),
-                                                                                      gain_cell = ifelse(is.na(percentile),TRUE,FALSE),
-                                                                                      percentile = ifelse(is.na(percentile), 0, percentile),
-                                                                                      percentile_2 = ifelse(is.na(percentile_2), 0, percentile_2),
-                                                                                      diff = percentile_2 - percentile) 
+    cells_frame <- filled_cells_2 %>% dplyr::left_join(filled_cells_1, by = c("T1","T2","T3")) %>% dplyr::filter(is.na(value)) %>%
+      dplyr::relocate(value, .before = value_2) %>% rbind(diff_cells) %>% dplyr::mutate(lost_cell = ifelse(is.na(value_2),TRUE,FALSE),
+                                                                                      gain_cell = ifelse(is.na(value),TRUE,FALSE),
+                                                                                      value = ifelse(is.na(value), 0, value),
+                                                                                      value_2 = ifelse(is.na(value_2), 0, value_2),
+                                                                                      diff = value_2 - value) 
   
     
   #### for percentile the difference is a bit complicated if the difference between sites 1 and two is positive that means that functional occupancy has gone down and vice versa.
@@ -382,23 +420,26 @@ TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab){
   
     
     ## identify cells which have a negative diff 
-  pos_cells <- cells_frame %>% dplyr::filter(diff < 0, !gain_cell, !lost_cell) %>% pull(diff)
-  
+  if(method == "prob"){
+    pos_cells <- cells_frame %>% dplyr::filter(diff > 0, !gain_cell, !lost_cell) %>% pull(diff)
+  } else {
+    pos_cells <- cells_frame %>% dplyr::filter(diff < 0, !gain_cell, !lost_cell) %>% pull(diff)
+  }
   ### blue is going to represent gain here ### Ramp goes from high to low so for negative(positive cells) the scale should be 
   
-  my.colors_high <-colorRampPalette(c("lightskyblue1", "steelblue1", "steelblue4", "blue")) #creates a function my.colors which interpolates n colors between blue, white and red
   color.df_high<-data.frame(diff=pos_cells[order(pos_cells)], color.name=my.colors_high(length(pos_cells))) %>% distinct(diff,.keep_all = TRUE)#generates 2001 colors from the color ramp
   
   
   ##### LOW CELLS 
   
   ## identify cells which have a positive diff(lose occupancy)
-  
+  if(method == "prob"){
+    neg_cells <- cells_frame %>% dplyr::filter(diff < 0, !gain_cell, !lost_cell) %>% pull(diff)
+  } else {
   neg_cells <- cells_frame %>% dplyr::filter(diff > 0, !gain_cell, !lost_cell) %>% pull(diff)
-  
+  }
   ## red is going to represent loss ## ramp is high to low
   
-  my.colors_low <-colorRampPalette(c("red", "orangered4", "orangered", "tomato")) #creates a function my.colors which interpolates n colors between blue, white and red
   color.df_low<-data.frame(diff=neg_cells[order(neg_cells)], color.name=my.colors_low(length(neg_cells))) %>% distinct(diff,.keep_all = TRUE)#generates 2001 colors from the color ramp
   
   color.df <- rbind(color.df_high,color.df_low)
@@ -422,10 +463,7 @@ y <- filled_cells_col$T1
 z <- filled_cells_col$T3
 
 
-#### ramp is high to low 
-  
-  my_colour_2p <- colorRampPalette(c("lightskyblue1","steelblue1","blue"))
-  my_colour_2n <- colorRampPalette(c("red","orange","yellow"))
+
   
   #######################################
   ###########################################
@@ -434,29 +472,53 @@ z <- filled_cells_col$T3
   T21_col_mat <- matrix(rep("#FFFFFF",50*50),
                         nrow = 50, ncol = 50)
   
-  
-  T21_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
+T21_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
                     nrow = 50, ncol = 50)
   rownames(T21_col) <- unique(sites1_data[["T21_dat"]]$T1)
   colnames(T21_col) <- unique(sites1_data[["T21_dat"]]$T2)
   
-  s1d <- sites1_data[["T21_dat"]] %>% dplyr::mutate(percentile = ifelse(is.na(percentile), 0, percentile))
-  s2d <- sites2_data[["T21_dat"]] %>% dplyr::mutate(percentile = ifelse(is.na(percentile), 0, percentile))
+  s1d <- sites1_data[["T21_dat"]]
+  s2d <- sites2_data[["T21_dat"]]
+  if(method == "prob"){
+    colnames(s1d)[3] <- "value"
+    colnames(s2d)[3] <- "value"
+    s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+  } else {
+    colnames(s1d)[4] <- "value"
+    colnames(s2d)[4] <- "value"
+    s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    }
+  
+  
   
    
   
   for(i in 1:nrow(sites1_data[["T21_dat"]])){
     T21_col[as.character(sites1_data[["T21_dat"]][i,1]),as.character(sites1_data[["T21_dat"]][i,2])] <- 
-      ifelse((s2d[i,4] - s1d[i,4]) == 0, NA,(s2d[i,4] - s1d[i,4]))
+      ifelse(method == "prob",ifelse((s2d[i,3] - s1d[i,3]) == 0, NA,(s2d[i,3] - s1d[i,3])),
+             ifelse((s2d[i,4] - s1d[i,4]) == 0, NA,(s2d[i,4] - s1d[i,4])))
   }
   
   T21_vals <- T21_col[which(!is.na(T21_col))]
   
-  pos_T21_vals <- T21_vals[which(T21_vals < 0)]
+  
+  if(method == "prob"){
+    pos_T21_vals <- T21_vals[which(T21_vals > 0)]
+  } else {
+    pos_T21_vals <- T21_vals[which(T21_vals < 0)]
+  }
+  
   pos_T21_vals <- pos_T21_vals[order(pos_T21_vals)]
   pos_T21_cols <- my_colour_2p(length(pos_T21_vals))
 
-  neg_T21_vals <- T21_vals[which(T21_vals > 0)]
+  if(method == "prob"){
+    neg_T21_vals <- T21_vals[which(T21_vals < 0)]
+  } else {
+    neg_T21_vals <- T21_vals[which(T21_vals > 0)]
+  }
+  
   neg_T21_vals <- neg_T21_vals[order(neg_T21_vals)]
   neg_T21_cols <- my_colour_2n(length(neg_T21_vals))
   
@@ -485,21 +547,44 @@ z <- filled_cells_col$T3
   rownames(T31_col) <- unique(sites1_data[["T31_dat"]]$T1)
   colnames(T31_col) <- unique(sites1_data[["T31_dat"]]$T2)
   
-  s1d <- sites1_data[["T31_dat"]] %>% dplyr::mutate(percentile = ifelse(is.na(percentile), 0, percentile))
-  s2d <- sites2_data[["T31_dat"]] %>% dplyr::mutate(percentile = ifelse(is.na(percentile), 0, percentile))
+  s1d <- sites1_data[["T21_dat"]]
+  s2d <- sites2_data[["T21_dat"]]
+  if(method == "prob"){
+    colnames(s1d)[3] <- "value"
+    colnames(s2d)[3] <- "value"
+    s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+  } else {
+    colnames(s1d)[4] <- "value"
+    colnames(s2d)[4] <- "value"
+    s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+  }
+  
   
   for(i in 1:nrow(sites1_data[["T31_dat"]])){
     T31_col[as.character(sites1_data[["T31_dat"]][i,1]),as.character(sites1_data[["T31_dat"]][i,2])] <- 
-      ifelse((s2d[i,4] - s1d[i,4]) == 0, NA,(s2d[i,4] - s1d[i,4]))
+      ifelse(method == "prob",ifelse((s2d[i,3] - s1d[i,3]) == 0, NA,(s2d[i,3] - s1d[i,3])),
+             ifelse((s2d[i,4] - s1d[i,4]) == 0, NA,(s2d[i,4] - s1d[i,4])))
   }
   
   T31_vals <- T31_col[which(!is.na(T31_col))]
   
-  pos_T31_vals <- T31_vals[which(T31_vals < 0)]
+  if(method == "prob"){
+    pos_T31_vals <- T31_vals[which(T31_vals > 0)]
+  } else {
+    pos_T31_vals <- T31_vals[which(T31_vals < 0)]
+  }
+  
   pos_T31_vals <- pos_T31_vals[order(pos_T31_vals)]
   pos_T31_cols <- my_colour_2p(length(pos_T31_vals))
   
-  neg_T31_vals <- T31_vals[which(T31_vals > 0)]
+  if(method == "prob"){
+    neg_T31_vals <- T31_vals[which(T31_vals < 0)]
+  } else {
+    neg_T31_vals <- T31_vals[which(T31_vals > 0)]
+  }
+  
   neg_T31_vals <- neg_T31_vals[order(neg_T31_vals)]
   neg_T31_cols <- my_colour_2n(length(neg_T31_vals))
   
@@ -527,22 +612,43 @@ z <- filled_cells_col$T3
   rownames(T23_col) <- unique(sites1_data[["T23_dat"]]$T1)
   colnames(T23_col) <- unique(sites1_data[["T23_dat"]]$T2)
   
-  s1d <- sites1_data[["T23_dat"]] %>% dplyr::mutate(percentile = ifelse(is.na(percentile), 0, percentile))
-  s2d <- sites2_data[["T23_dat"]] %>% dplyr::mutate(percentile = ifelse(is.na(percentile), 0, percentile))
+  s1d <- sites1_data[["T21_dat"]]
+  s2d <- sites2_data[["T21_dat"]]
+  if(method == "prob"){
+    colnames(s1d)[3] <- "value"
+    colnames(s2d)[3] <- "value"
+    s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+  } else {
+    colnames(s1d)[4] <- "value"
+    colnames(s2d)[4] <- "value"
+    s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+  }
   
   for(i in 1:nrow(sites1_data[["T23_dat"]])){
     T23_col[as.character(sites1_data[["T23_dat"]][i,1]),as.character(sites1_data[["T23_dat"]][i,2])] <- 
-      ifelse((s2d[i,4] - s1d[i,4]) == 0, NA,(s2d[i,4] - s1d[i,4]))
+      ifelse(method == "prob",ifelse((s2d[i,3] - s1d[i,3]) == 0, NA,(s2d[i,3] - s1d[i,3])),
+             ifelse((s2d[i,4] - s1d[i,4]) == 0, NA,(s2d[i,4] - s1d[i,4])))
   }
   
   
   T23_vals <- T23_col[which(!is.na(T23_col))]
   
-  pos_T23_vals <- T23_vals[which(T23_vals < 0)]
+  if(method == "prob"){
+    pos_T23_vals <- T23_vals[which(T23_vals > 0)]
+  } else {
+    pos_T23_vals <- T23_vals[which(T23_vals < 0)]
+  }
+  
   pos_T23_vals <- pos_T23_vals[order(pos_T23_vals)]
   pos_T23_cols <- my_colour_2p(length(pos_T23_vals))
   
-  neg_T23_vals <- T23_vals[which(T23_vals > 0)]
+  if(method == "prob"){
+    neg_T23_vals <- T23_vals[which(T23_vals < 0)]
+  } else {
+    neg_T23_vals <- T23_vals[which(T23_vals > 0)]
+  }
   neg_T23_vals <- neg_T23_vals[order(neg_T23_vals)]
   neg_T23_cols <- my_colour_2n(length(neg_T23_vals))
   
@@ -616,8 +722,26 @@ z <- filled_cells_col$T3
 #TPD_Diff_plot(sites1 = primary,sites2 = secondary,data = PREDICTS_tpds, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body")
 
 
-
-
-
-
-
+species_fit <- function(cells){
+  
+  species_cells_frame <- data.frame(cells[,c(1:3)],potential_species = NA)
+  
+  
+  
+  for(i in 1:nrow(species_cells_frame)){
+    print(i)
+    
+    y <- cells[i,1]
+    x <- cells[i,2]
+    z <- cells[i,3]
+    
+    for(j in 1:length(species_TPD)){
+      sp_dat <- species_TPD[[j]] %>% dplyr::filter(locomotion == x, foraging == y, body == z)
+      if(nrow(sp_dat) > 0) {
+        species_cells_frame[i,4] <- paste(species_cells_frame[i,4],names(species_TPD)[j], sep = "/")
+      }
+    }
+    species_cells_frame[i,4] <- gsub(pattern = "NA/", replacement = "", x = species_cells_frame[i,4]) 
+  }
+  return(species_cells_frame)
+  }
