@@ -135,7 +135,7 @@ PREDICTS_TPD <- function(site){
 
 comm_sp <- site$Birdlife_Name
 
-trait_density <- species_TPD(comm_sp, method = "bandwidth")
+trait_density <- species_TPD(comm_sp, method = "sds")
 
 
 comm <- site %>% set_rownames(site$Birdlife_Name) %>% dplyr::select(RelativeAbundance)
@@ -144,6 +144,8 @@ comm <- site %>% set_rownames(site$Birdlife_Name) %>% dplyr::select(RelativeAbun
 Comm_tpd <- TPDc(TPDs = trait_density, sampUnit = t(comm))
 
 Comm_tpd$TPDc <- Comm_tpd$TPDc$TPDc
+Comm_tpd$data <- NULL
+
 
 return(Comm_tpd)
 
@@ -155,7 +157,16 @@ require(future.apply)
 plan(multicore(workers = 8))
 
 
-PREDICTS_tpds <- future_lapply(PRED_sites,PREDICTS_TPD)
+PREDICTS_tpds <- future_lapply(PRED_sites[1:8],PREDICTS_TPD)
+
+
+eval_grid <- species_TPD(all_sp[1:20], method = "sds")
+
+
+PREDICTS_tpds$data$evaluation_grid <- eval_grid[["data"]][["evaluation_grid"]]
+PREDICTS_tpds$data$cell_volume <- eval_grid[["data"]][["cell_volume"]]
+
+PREDICTS_tpds <- PREDICTS_tpds[c(length(PREDICTS_tpds),1:(length(PREDICTS_tpds)-1))]
 
 
 
@@ -189,6 +200,7 @@ PREDICTS_TPD_forage <- function(site){
   Comm_tpd <- TPDc(TPDs = mean_TPD, sampUnit = t(comm))
   
   Comm_tpd$TPDc <- Comm_tpd$TPDc$TPDc
+  Comm_tpd$data <- NULL
   
   return(Comm_tpd)
   
@@ -197,6 +209,15 @@ PREDICTS_TPD_forage <- function(site){
 
 For_PREDICTS_tpds <- future_lapply(PRED_sites[1:8],PREDICTS_TPD_forage)
 
+eval_grid <- TPDsMean(species = for_traits[["foraging_traits"]][["PCoA_Scores"]][1:10,1], 
+                      means = for_traits[["foraging_traits"]][["PCoA_Scores"]][1:10,c(2:4)],
+                      matrix(rep(sds,10), ncol = 3, byrow = TRUE),
+                      trait_ranges = trait_ranges)
+
+For_PREDICTS_tpds$data$evaluation_grid <- eval_grid[["data"]][["evaluation_grid"]]
+For_PREDICTS_tpds$data$cell_volume <- eval_grid[["data"]][["cell_volume"]]
+
+For_PREDICTS_tpds <- For_PREDICTS_tpds[c(length(For_PREDICTS_tpds),1:(length(For_PREDICTS_tpds)-1))]
 
 
 write_rds(For_PREDICTS_tpds, file = "Outputs/PREDICTS_sites_for_tpds.rds")
@@ -204,4 +225,7 @@ write_rds(For_PREDICTS_tpds, file = "Outputs/PREDICTS_sites_for_tpds.rds")
 
 
 closeAllConnections()
+
+
+
 

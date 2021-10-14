@@ -130,8 +130,11 @@ TPD_randomisations_func <- function(list, traits, method){
 
   #test <- dissim(ran_com_TPD)
   
-    
-mean_TPDc_mat <- as.numeric(ran_com_TPD$TPDc$TPDc$Randomisation_Comm)
+
+mean_TPDc_mat <- list()      
+mean_TPDc_mat$TPDc$RelativeAbundance <- as.numeric(ran_com_TPD$TPDc$TPDc$Randomisation_Comm)
+
+
 
 return(mean_TPDc_mat)
 }
@@ -144,42 +147,44 @@ plan(multicore(workers = 8))
 
 ####morpho list
 
-mean_TPD_randomisations_morpho <- list()
+
+TPD_randomisations_morpho <- future_lapply(randomisations[1:8],TPD_randomisations_func, traits = "morpho")
 
 trait_ranges <- trait_range_calc(range = 0.15, traits = TPD_traits$complete_traits)
-
 eval_grid <- TPDs(TPD_traits$complete_traits[c(1:14),1], TPD_traits$complete_traits[c(1:14),c(2:4)], trait_ranges = trait_ranges)
 
-mean_TPD_randomisations_morpho$evaluation_grid <- eval_grid$data$evaluation_grid
+TPD_randomisations_morpho$data$evaluation_grid <- eval_grid[["data"]][["evaluation_grid"]]
+TPD_randomisations_morpho$data$cell_volume <- eval_grid[["data"]][["cell_volume"]]
+
+TPD_randomisations_morpho <- TPD_randomisations_morpho[c(length(TPD_randomisations_morpho),1:(length(TPD_randomisations_morpho)-1))]
 
 
-TPD_randomisations_list <- future_lapply(randomisations[1:8],TPD_randomisations_func, traits = "morpho")
-
-TPD_randomisations_morpho <- c(mean_TPD_randomisations_morpho,TPD_randomisations_list)
-
+write_rds(file = "Outputs/randomisations_TPD_morpho.rds", TPD_randomisations_morpho)
 ##### foraging list
 
-rm(TPD_randomisations_list)
+rm(TPD_randomisations_morpho)
 
-mean_TPD_randomisations_foraging <- list()
+
 
 trait_ranges <- trait_range_calc(range = 0.15, traits = for_traits[["foraging_traits"]][["PCoA_Scores"]])
 sds <- sqrt(diag(Hpi.diag(for_traits[["foraging_traits"]][["PCoA_Scores"]][,c(2:4)])))
 
+
+TPD_randomisations_foraging <- future_lapply(randomisations[1:8],TPD_randomisations_func, traits = "foraging")
 
 eval_grid <- TPDsMean(species = for_traits[["foraging_traits"]][["PCoA_Scores"]][c(1:14),1], 
                       means = for_traits[["foraging_traits"]][["PCoA_Scores"]][c(1:14),c(2:4)], 
                       sds = matrix(rep(sds,14), ncol = 3, byrow = TRUE),
                       trait_ranges = trait_ranges)
 
-mean_TPD_randomisations_foraging$evaluation_grid <- eval_grid$data$evaluation_grid
+TPD_randomisations_foraging$data$evaluation_grid <- eval_grid[["data"]][[c("evaluation_grid","cell_volume")]]
+TPD_randomisations_foraging$data$cell_volume <- eval_grid[["data"]][["cell_volume"]]
 
-TPD_randomisations_list <- future_lapply(randomisations[1:8],TPD_randomisations_func, traits = "foraging")
+TPD_randomisations_foraging <- TPD_randomisations_foraging[c(length(TPD_randomisations_foraging),1:(length(TPD_randomisations_foraging)-1))]
 
-TPD_randomisations_foraging <- c(mean_TPD_randomisations_foraging,TPD_randomisations_list)
 
 write_rds(file = "Outputs/randomisations_TPD_for.rds", TPD_randomisations_foraging)
-write_rds(file = "Outputs/randomisations_TPD_morpho.rds", TPD_randomisations_morpho)
+
   
 closeAllConnections()
 
