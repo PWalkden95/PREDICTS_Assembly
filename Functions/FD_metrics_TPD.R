@@ -1,8 +1,14 @@
+
+
 Calc_FRich <- function(data){
-FRich <- data.frame(SSBS = names(data)[2:length(data)],FRich = NA)
+  cell_volume <- data[["data"]][["cell_volume"]]
+  
+  site_data <- data[-1]
+  
+FRich <- data.frame(SSBS = names(site_data),FRich = NA)
 j <- 1
-for(i in 2:length(data)){
-  TPD_aux <- data[[i]][["TPDc"]][["RelativeAbundance"]]
+for(i in 1:length(site_data)){
+  TPD_aux <- site_data[[i]][["TPDc"]][["RelativeAbundance"]]
   TPD_aux[TPD_aux > 0] <- cell_volume
   FRich[j,"FRich"] <- sum(TPD_aux)
   j <- j + 1
@@ -12,13 +18,15 @@ return(FRich)
 
 
 
-FRich <- Calc_FRich(PREDICTS_tpds)
+
 ################################################
 ####### Functional Evenness calc
 Calc_FEve <- function(data) {
+  
+  site_data <- data[-1]
   j <- 1
-  FEve <- data.frame(SSBS = names(data)[2:length(data)],FEve = NA)
-  for (i in 2:length(data)) {
+  FEve <- data.frame(SSBS = names(site_data),FEve = NA)
+  for (i in 1:length(site_data)) {
     TPD <- data[[i]][["TPDc"]][["RelativeAbundance"]]
     TPD_aux <- TPD[TPD > 0]
     TPD_eve <- rep((1/length(TPD_aux)), times = length(TPD_aux))
@@ -28,17 +36,20 @@ Calc_FEve <- function(data) {
   return(FEve)
 }
 
-FEve <- Calc_FEve(PREDICTS_tpds)
+
 ##############################################################
 #############################################################
 # Functional Divergence
 Calc_FDiv <- function(data) {
   evaluation_grid <- data$data$evaluation_grid
   cell_volume <- data$data$cell_volume
-  FDiv <- data.frame(SSBS = names(data)[2:length(data)],FDiv = NA)
+  
+  site_data <- data[-1]
+  
+  FDiv <- data.frame(SSBS = names(site_data),FDiv = NA)
   k <- 1
-  for (i in 2:length(data)) {
-    TPD <- data[[i]][["TPDc"]][["RelativeAbundance"]]
+  for (i in 1:length(site_data)) {
+    TPD <- site_data[[i]][["TPDc"]][["RelativeAbundance"]]
     functional_volume <- evaluation_grid[TPD > 0,
                                          , drop = F]
     for (j in 1:ncol(functional_volume)) {
@@ -67,31 +78,49 @@ Calc_FDiv <- function(data) {
 }
 
 
+TPD_FD_metrics <- function(data){
 
-
-FDiv <- Calc_FDiv(PREDICTS_tpds)
+  FRich <- Calc_FRich(data)
+  FEve <- Calc_FEve(data)
+  FDiv <- Calc_FDiv(data)
+  
+  
+  
 FD_metrics <- FRich %>% dplyr::left_join(FEve, by = "SSBS") %>% dplyr::left_join(FDiv, by = "SSBS")
+
 return(FD_metrics)
 }
 
 
 
-TPD_FD_metrics <- FD_metrics(PREDICTS_tpds)
+FD_metrics <- TPD_FD_metrics(PREDICTS_tpds)
 
 ############################################
 ############################################
+obj_2_string <-function(x){
+str <- deparse(substitute(x))
+return(str)
+}
 
 
+Calc_dissim <- function(data,sites1,sites2){
 
 
-
-
+  
 results_samp <- list()
-results_samp$dissimilarity <- NA
-results_samp$P_shared <- NA
-results_samp$P_non_shared <- NA
+results_samp$dissim$dissimilarity <- NA
+results_samp$dissim$P_shared <- NA
+results_samp$dissim$P_non_shared <- NA
+
+sites1_data <- TPD_plot_data(data, sites1)
+sites2_data <- TPD_plot_data(data, sites2)
+
+
 TPD_i <- sites1_data[["pl_dat"]][["prob"]]
 TPD_j <- sites2_data[["pl_dat"]][["prob"]]
+
+
+
 O_aux <- sum(pmin(TPD_i, TPD_j))
 shared_aux <- which(TPD_i > 0 & TPD_j > 0)
 A_aux <- sum(pmax(TPD_i[shared_aux], TPD_j[shared_aux])) -
@@ -102,42 +131,20 @@ B_aux <- sum(TPD_i[only_in_i_aux])
 only_in_j_aux <- which(TPD_i == 0 & TPD_j >
                          0)
 C_aux <- sum(TPD_j[only_in_j_aux])
-results_samp$dissimilarity[i, j] <- results_samp$dissimilarity[j,
-                                                               i] <- 1 - O_aux
-results_samp$dissimilarity <- results_samp$dissimilarity <- 1 - O_aux
-results_samp$P_non_shared <- results_samp$P_non_shared     <- (2 * min(B_aux, C_aux))/(A_aux +
+results_samp$dissim$dissimilarity <- results_samp$dissim$dissimilarity <- 1 - O_aux
+results_samp$dissim$P_non_shared <- results_samp$dissim$P_non_shared     <- (2 * min(B_aux, C_aux))/(A_aux +
                                                                                          2 * min(B_aux, C_aux))
-results_samp$P_shared <- results_samp$P_shared  <- 1 - results_samp$P_non_shared
-View(results_samp)
-results_samp <- list()
-results_samp$site_names$sites1 <- sites1
-results_samp$site_names$sites2 <- sites2
-results_samp$dissimilarity <- NA
-results_samp$P_shared <- NA
-results_samp$P_non_shared <- NA
-TPD_i <- sites1_data[["pl_dat"]][["prob"]]
-TPD_j <- sites2_data[["pl_dat"]][["prob"]]
-O_aux <- sum(pmin(TPD_i, TPD_j))
-shared_aux <- which(TPD_i > 0 & TPD_j > 0)
-A_aux <- sum(pmax(TPD_i[shared_aux], TPD_j[shared_aux])) -
-  O_aux
-only_in_i_aux <- which(TPD_i > 0 & TPD_j ==
-                         0)
-B_aux <- sum(TPD_i[only_in_i_aux])
-only_in_j_aux <- which(TPD_i == 0 & TPD_j >
-                         0)
-C_aux <- sum(TPD_j[only_in_j_aux])
-results_samp$dissimilarity <- results_samp$dissimilarity <- 1 - O_aux
-results_samp$P_non_shared <- results_samp$P_non_shared     <- (2 * min(B_aux, C_aux))/(A_aux +
-                                                                                         2 * min(B_aux, C_aux))
-results_samp$P_shared <- results_samp$P_shared  <- 1 - results_samp$P_non_shared
-View(results_samp)
+results_samp$dissim$P_shared <- results_samp$dissim$P_shared  <- 1 - results_samp$dissim$P_non_shared
 
 
 
+return(results_samp)
+
+}
 
 
 
+test <- Calc_dissim(PREDICTS_tpds, sites1 = primary_for, sites2 = primary_non_for)
 
 
 

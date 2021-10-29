@@ -14,6 +14,8 @@ require(ggpubr) ## for multiple plots
 require(magrittr) ## piping 
 require(tidyverse) ## data manipulations
 require(rgl) ## 3D plotting
+require(geometry)
+
 
 options(rgl.printRglwidget = TRUE)
 
@@ -27,15 +29,16 @@ options(rgl.printRglwidget = TRUE)
 
 ### percentileTPD: function to transform probabilities from TPDc object into quantiles
 ### x is a TPDc object 
-percentile_cells <- function(x){
+percentile_cells <- function(data){
+    x <- data
     x$percentile <- NA
-    orderTPD <- as.numeric(rownames(x)[order(x[,"prob"], decreasing = T)])
-    x <- x[as.character(orderTPD),]
+    x$original_rows <- as.numeric(rownames(x))
+    x <- x %>% dplyr::arrange(desc(prob))
     x[,"percentile"] <- cumsum(x[,"prob"])
-    x <- x[as.character(1:nrow(x)),]
+    x <- x %>% dplyr::arrange(original_rows)
+    x <- x %>% dplyr::select(-original_rows)
     return(x)
 }
-
  ### function to plot a 2D plot of pairwise trait axes input is a matrix with three columns the first two being trait axes values labelled T1 and T2,
 ### the third column being the TPD probability of occupancy
 
@@ -84,10 +87,10 @@ TPD_plot_data <- function(data,site){
   T21_dat <- pl_dat %>% dplyr::group_by(T2,T1) %>% dplyr::summarise(prob = sum(prob, na.rm = TRUE)) %>%
     dplyr::mutate(prob = ifelse(prob == 0,NA,prob))%>% set_colnames(c("T1","T2","prob")) %>% data.frame() %>% percentile_cells() %>% 
     dplyr::filter(!is.na(T1))
-  T31_dat <- pl_dat %>% dplyr::group_by(T3,T1) %>% dplyr::summarise(prob = mean(prob, na.rm = TRUE)) %>%
+  T31_dat <- pl_dat %>% dplyr::group_by(T3,T1) %>% dplyr::summarise(prob = sum(prob, na.rm = TRUE)) %>%
     dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% set_colnames(c("T1","T2","prob")) %>% data.frame() %>% percentile_cells() %>% 
     dplyr::filter(!is.na(T1))
-  T23_dat <- pl_dat %>% dplyr::group_by(T2,T3) %>% dplyr::summarise(prob = mean(prob, na.rm = TRUE)) %>%
+  T23_dat <- pl_dat %>% dplyr::group_by(T2,T3) %>% dplyr::summarise(prob = sum(prob, na.rm = TRUE)) %>%
     dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% set_colnames(c("T1","T2","prob")) %>% data.frame() %>% percentile_cells() %>% 
     dplyr::filter(!is.na(T1))
   
@@ -127,7 +130,7 @@ TPD_plot_data <- function(data,site){
 # constructing this plot comes in a number of stages and requires the use of the rgl package 
 
 
-TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab, method){
+TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab, method, title){
 
       if(!all(sites %in% names(data))){
     sites <- sites[which(sites %in% names(data))]
@@ -331,7 +334,7 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab, method){
             z = t(matrix(rep(unique(data_3d[["pl_dat"]]$T3),50),
                          nrow = 50, ncol = 50)),
             color = T23_col_mat, lit = FALSE, smooth = FALSE)
-  title3d(main = "3D_TPD_Plot", xlab = T2lab, ylab = T1lab, zlab = T3lab)
+  title3d(main = title, xlab = T2lab, ylab = T1lab, zlab = T3lab)
   
   
   
@@ -361,7 +364,7 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab, method){
 # method <- "prob"
 
 
-TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab,method, dataout = TRUE){
+TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab,method, title){
   
   
   if(!all(sites1 %in% names(data))){
@@ -728,29 +731,30 @@ T21_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
             z = t(matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
                          nrow = 50, ncol = 50)),
             color = T23_col_mat, lit = FALSE, smooth = FALSE)
-  title3d(main = "3D_TPD_Plot", xlab = T2lab, ylab = T1lab, zlab = T3lab)
+  title3d(main = title, xlab = T2lab, ylab = T1lab, zlab = T3lab)
   
   
 }
 
 #TPD_Diff_plot(sites1 = primary,sites2 = secondary,data = PREDICTS_tpds, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body")
 
+# data <- PREDICTS_tpds
+# randata <- PREDICTS_randomisations
+# site <- secondary
+# method = "prob"
+# threshold <- 0.95
 
-
-
-
-
-TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
+TPD_ranDiff_plot <- function(data,randata,sites,T1lab,T2lab,T3lab,method,threshold,title){
   
   ### extract the TPD data for teh two sets of sites 
   
-  if(!all(site %in% names(data))|!all(site %in% names(randata))){
-    site <- site[which(site %in% names(data))]
-    site <- site[which(site %in% names(randata))]
+  if(!all(sites %in% names(data))|!all(sites %in% names(randata))){
+    sites <- sites[which(sites %in% names(data))]
+    sites <- sites[which(sites %in% names(randata))]
   }
   
-  sites1_data <- TPD_plot_data(data,site)
-  sites2_data <- TPD_plot_data(randata,site)
+  sites1_data <- TPD_plot_data(data,sites)
+  sites2_data <- TPD_plot_data(randata,sites)
   
   ## for the 3D plot need to just get the cells which are functionally occupied 
   
@@ -759,10 +763,11 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
   
   filled_cells_1 <- percentile_cells(filled_cells_1)
   
-  filled_cells_2 <- sites2_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>% dplyr::summarise(prob = mean(prob, na.rm = TRUE)) %>%
+  filled_cells_2 <- sites2_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>%
     dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% filter(!is.na(prob)) %>% data.frame()
   
-  filled_cells_2 <- percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile)
+  filled_cells_2 <- percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile) %>% 
+    dplyr::filter(percentile_2 <= threshold)
   
   
   if(method == "prob"){
@@ -868,11 +873,13 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
   
   s1d <- sites1_data[["T21_dat"]]
   s2d <- sites2_data[["T21_dat"]]
+  
+  
   if(method == "prob"){
     colnames(s1d)[3] <- "value"
     colnames(s2d)[3] <- "value"
     s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
-    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value)|percentile >= threshold, 0, value))
   } else {
     colnames(s1d)[4] <- "value"
     colnames(s2d)[4] <- "value"
@@ -930,7 +937,6 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
   T31_col_mat <- matrix(rep("#FFFFFF",50*50),
                         nrow = 50, ncol = 50)
   
-  
   T31_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
                     nrow = 50, ncol = 50)
   rownames(T31_col) <- unique(sites1_data[["T31_dat"]]$T1)
@@ -938,17 +944,22 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
   
   s1d <- sites1_data[["T31_dat"]]
   s2d <- sites2_data[["T31_dat"]]
+  
+  
   if(method == "prob"){
     colnames(s1d)[3] <- "value"
     colnames(s2d)[3] <- "value"
     s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
-    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value)|percentile >= threshold, 0, value))
   } else {
     colnames(s1d)[4] <- "value"
     colnames(s2d)[4] <- "value"
     s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
     s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
   }
+  
+  
+  
   
   
   for(i in 1:nrow(sites1_data[["T31_dat"]])){
@@ -958,6 +969,7 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
   }
   
   T31_vals <- T31_col[which(!is.na(T31_col))]
+  
   
   if(method == "prob"){
     pos_T31_vals <- T31_vals[which(T31_vals > 0)]
@@ -995,7 +1007,6 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
   T23_col_mat <- matrix(rep("#FFFFFF",50*50),
                         nrow = 50, ncol = 50)
   
-  
   T23_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
                     nrow = 50, ncol = 50)
   rownames(T23_col) <- unique(sites1_data[["T23_dat"]]$T1)
@@ -1003,11 +1014,13 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
   
   s1d <- sites1_data[["T23_dat"]]
   s2d <- sites2_data[["T23_dat"]]
+  
+  
   if(method == "prob"){
     colnames(s1d)[3] <- "value"
     colnames(s2d)[3] <- "value"
     s1d <- s1d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
-    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
+    s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value)|percentile >= threshold, 0, value))
   } else {
     colnames(s1d)[4] <- "value"
     colnames(s2d)[4] <- "value"
@@ -1015,14 +1028,18 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
     s2d <- s2d %>% dplyr::mutate(value = ifelse(is.na(value), 0, value))
   }
   
+  
+  
+  
+  
   for(i in 1:nrow(sites1_data[["T23_dat"]])){
     T23_col[as.character(sites1_data[["T23_dat"]][i,1]),as.character(sites1_data[["T23_dat"]][i,2])] <- 
       ifelse(method == "prob",ifelse((s2d[i,3] - s1d[i,3]) == 0, NA,(s2d[i,3] - s1d[i,3])),
              ifelse((s2d[i,4] - s1d[i,4]) == 0, NA,(s2d[i,4] - s1d[i,4])))
   }
   
-  
   T23_vals <- T23_col[which(!is.na(T23_col))]
+  
   
   if(method == "prob"){
     pos_T23_vals <- T23_vals[which(T23_vals > 0)]
@@ -1038,6 +1055,7 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
   } else {
     neg_T23_vals <- T23_vals[which(T23_vals > 0)]
   }
+  
   neg_T23_vals <- neg_T23_vals[order(neg_T23_vals)]
   neg_T23_cols <- my_colour_2n(length(neg_T23_vals))
   
@@ -1051,8 +1069,6 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
   
   
   T23_col_mat <- as.character(T23_col_mat)
-  
-  
   #######################################
   ###################################
   
@@ -1103,33 +1119,480 @@ TPD_ranDiff_plot <- function(data,randata,site,T1lab,T2lab,T3lab,method){
             z = t(matrix(rep(unique(sites1_data[["pl_dat"]]$T3),50),
                          nrow = 50, ncol = 50)),
             color = T23_col_mat, lit = FALSE, smooth = FALSE)
-  title3d(main = "3D_TPD_Plot", xlab = T2lab, ylab = T1lab, zlab = T3lab)
+  title3d(main = title, xlab = T2lab, ylab = T1lab, zlab = T3lab)
   
   
 }
 
 
 
+
+
+Calc_FRich <- function(data,sites= NULL, sites1 = NULL,sites2 = NULL){
+  cell_volume <- data[["data"]][["cell_volume"]]
+  
+  if(!is.null(sites1)& !is.null(sites2)){
+  
+  sites1_data <- TPD_plot_data(data,sites1)
+  sites2_data <- TPD_plot_data(data,sites2)
+  
+  site_data <- data[c(sites1,sites2)]
+  site_data$sites1$TPDc$RelativeAbundance <- sites1_data[["pl_dat"]][["prob"]]
+  site_data$sites2$TPDc$RelativeAbundance <- sites2_data[["pl_dat"]][["prob"]]
+  } else {
+    sites_data <- TPD_plot_data(data,sites)
+    site_data <- data[c(sites)]
+    site_data$total_sites$TPDc$RelativeAbundance <- sites_data[["pl_dat"]][["prob"]]
+  }
+  
+  
+  FRich <- data.frame(SSBS = names(site_data),FRich = NA)
+  j <- 1
+  for(i in 1:length(site_data)){
+    TPD_aux <- site_data[[i]][["TPDc"]][["RelativeAbundance"]]
+    TPD_aux[TPD_aux > 0] <- cell_volume
+    FRich[j,"FRich"] <- sum(TPD_aux)
+    j <- j + 1
+  }
+  
+  return(FRich)
+}
+
+
+
+################################################
+####### Functional Evenness calc
+Calc_FEve <- function(data,sites = NULL, sites1 = NULL, sites2 = NULL) {
+  
+  if(!is.null(sites1)& !is.null(sites2)){
+    
+    sites1_data <- TPD_plot_data(data,sites1)
+    sites2_data <- TPD_plot_data(data,sites2)
+    
+    site_data <- data[c(sites1,sites2)]
+    site_data$sites1$TPDc$RelativeAbundance <- sites1_data[["pl_dat"]][["prob"]]
+    site_data$sites2$TPDc$RelativeAbundance <- sites2_data[["pl_dat"]][["prob"]]
+  } else {
+    sites_data <- TPD_plot_data(data,sites)
+    site_data <- data[c(sites)]
+    site_data$total_sites$TPDc$RelativeAbundance <- sites_data[["pl_dat"]][["prob"]]
+  }
+  
+  j <- 1
+  FEve <- data.frame(SSBS = names(site_data),FEve = NA)
+  for (i in 1:length(site_data)) {
+    TPD <- site_data[[i]][["TPDc"]][["RelativeAbundance"]]
+    TPD_aux <- TPD[TPD > 0]
+    TPD_eve <- rep((1/length(TPD_aux)), times = length(TPD_aux))
+    FEve[j,"FEve"] <- sum(pmin(TPD_aux, TPD_eve))
+    j <- j +1
+  }
+  return(FEve)
+}
+
+
+##############################################################
+#############################################################
+# Functional Divergence
+Calc_FDiv <- function(data,sites = NULL, sites1 = NULL,sites2 = NULL) {
+  evaluation_grid <- data$data$evaluation_grid
+  cell_volume <- data$data$cell_volume
+  
+  if(!is.null(sites1)& !is.null(sites2)){
+    
+    sites1_data <- TPD_plot_data(data,sites1)
+    sites2_data <- TPD_plot_data(data,sites2)
+    
+    site_data <- data[c(sites1,sites2)]
+    site_data$sites1$TPDc$RelativeAbundance <- sites1_data[["pl_dat"]][["prob"]]
+    site_data$sites2$TPDc$RelativeAbundance <- sites2_data[["pl_dat"]][["prob"]]
+  } else {
+    sites_data <- TPD_plot_data(data,sites)
+    site_data <- data[c(sites)]
+    site_data$total_sites$TPDc$RelativeAbundance <- sites_data[["pl_dat"]][["prob"]]
+  }
+  
+  FDiv <- data.frame(SSBS = names(site_data),FDiv = NA)
+  k <- 1
+  for (i in 1:length(site_data)) {
+    TPD <- site_data[[i]][["TPDc"]][["RelativeAbundance"]]
+    functional_volume <- evaluation_grid[TPD > 0,
+                                         , drop = F]
+    for (j in 1:ncol(functional_volume)) {
+      functional_volume[, j] <- (functional_volume[,
+                                                   j] - min(functional_volume[, j]))/(max(functional_volume[,
+                                                                                                            j]) - min(functional_volume[, j]))
+    }
+    TPD_aux <- TPD[TPD > 0]
+    COG <- colMeans(functional_volume, na.rm = T)
+    dist_COG <- function(x, COG) {
+      result_aux <- stats::dist(rbind(x, COG))
+      return(result_aux)
+    }
+    COGDist <- apply(functional_volume, 1, dist_COG,
+                     COG)
+    meanCOGDist <- mean(COGDist)
+    distDeviances <- COGDist - meanCOGDist
+    AWdistDeviances <- sum(TPD_aux * distDeviances)
+    absdistDeviances <- abs(COGDist - meanCOGDist)
+    AWabsdistDeviances <- sum(TPD_aux * absdistDeviances)
+    FDiv[k,"FDiv"] <- (AWdistDeviances + meanCOGDist)/(AWabsdistDeviances +
+                                                         meanCOGDist)
+    k <- k + 1
+  }
+  return(FDiv)
+}
+
+
+TPD_FD_metrics <- function(data,sites = NULL, sites1 = NULL,sites2 = NULL){
+  
+  if(!is.null(sites1) & !is.null(sites2)){
+  
+  FRich <- Calc_FRich(data,sites1,sites2)
+  FEve <- Calc_FEve(data,sites1,sites2)
+  FDiv <- Calc_FDiv(data,sites1,sites2)
+  } else {
+    FRich <- Calc_FRich(data,sites)
+    FEve <- Calc_FEve(data,sites)
+    FDiv <- Calc_FDiv(data,sites)
+  }
+  
+  
+  FD_metrics <- FRich %>% dplyr::left_join(FEve, by = "SSBS") %>% dplyr::left_join(FDiv, by = "SSBS") %>% set_rownames(FRich$SSBS) %>% dplyr::select(-SSBS)
+  
+  return(FD_metrics)
+}
+
+
+
+############################################
+############################################
+obj_2_string <-function(x){
+  str <- deparse(substitute(x))
+  return(str)
+}
+
+
+Calc_dissim <- function(data,sites1,sites2){
+  
+  
+  
+  results_samp <- list()
+  results_samp$dissim$dissimilarity <- NA
+  results_samp$dissim$P_shared <- NA
+  results_samp$dissim$P_non_shared <- NA
+  
+  sites1_data <- TPD_plot_data(data, sites1)
+  sites2_data <- TPD_plot_data(data, sites2)
+  
+  
+  TPD_i <- sites1_data[["pl_dat"]][["prob"]]
+  TPD_j <- sites2_data[["pl_dat"]][["prob"]]
+  
+  
+  
+  O_aux <- sum(pmin(TPD_i, TPD_j))
+  shared_aux <- which(TPD_i > 0 & TPD_j > 0)
+  A_aux <- sum(pmax(TPD_i[shared_aux], TPD_j[shared_aux])) -
+    O_aux
+  only_in_i_aux <- which(TPD_i > 0 & TPD_j ==
+                           0)
+  B_aux <- sum(TPD_i[only_in_i_aux])
+  only_in_j_aux <- which(TPD_i == 0 & TPD_j >
+                           0)
+  C_aux <- sum(TPD_j[only_in_j_aux])
+  results_samp$dissim$dissimilarity <- 1 - O_aux
+  results_samp$dissim$P_non_shared     <- (2 * min(B_aux, C_aux))/(A_aux + 2 * min(B_aux, C_aux))
+  results_samp$dissim$P_shared <- 1 - results_samp$dissim$P_non_shared
+  
+  
+  return(results_samp)
+  
+}
+
+Calc_dissim_random <- function(data,randata,sites, threshold){
+  
+  
+  if(!all(sites %in% names(data))|!all(sites %in% names(randata))){
+    sites <- sites[which(sites %in% names(data))]
+    sites <- sites[which(sites %in% names(randata))]
+  }
+  
+  
+  results_samp <- list()
+  results_samp$dissim$dissimilarity <- NA
+  results_samp$dissim$P_shared <- NA
+  results_samp$dissim$P_non_shared <- NA
+  
+  sites1_data <- TPD_plot_data(data, sites)
+  ransites_data <- TPD_plot_data(randata, sites)
+  
+  
+  TPD_i <- sites1_data[["pl_dat"]][["prob"]]
+  
+  
+  TPD_j <- ransites_data[["pl_dat"]] %>%
+    percentile_cells() %>% dplyr::mutate(prob = ifelse(percentile >= threshold, 0, prob)) %>% pull(prob)
+  
+  
+  
+  
+  
+  
+  O_aux <- sum(pmin(TPD_i, TPD_j))
+  shared_aux <- which(TPD_i > 0 & TPD_j > 0)
+  A_aux <- sum(pmax(TPD_i[shared_aux], TPD_j[shared_aux])) -
+    O_aux
+  only_in_i_aux <- which(TPD_i > 0 & TPD_j ==
+                           0)
+  B_aux <- sum(TPD_i[only_in_i_aux])
+  only_in_j_aux <- which(TPD_i == 0 & TPD_j >
+                           0)
+  C_aux <- sum(TPD_j[only_in_j_aux])
+  results_samp$dissim$dissimilarity <- results_samp$dissim$dissimilarity <- 1 - O_aux
+  results_samp$dissim$P_non_shared <- results_samp$dissim$P_non_shared     <- (2 * min(B_aux, C_aux))/(A_aux +
+                                                                                                         2 * min(B_aux, C_aux))
+  results_samp$dissim$P_shared <- results_samp$dissim$P_shared  <- 1 - results_samp$dissim$P_non_shared
+  
+  
+  return(results_samp)
+  
+}
+
+######################################
+######################################
+#####################################
+
 species_fit <- function(cells){
   
-  species_cells_frame <- data.frame(cells[,c(1:3)],potential_species = NA)
+species_cells_frame <- data.frame(cells[,c(1:3)],
+                                  gain = cells[,"gain_cell"], loss = cells[,"lost_cell"],
+                                  potential_gain_species = NA, potential_loss_species = NA) %>%
+  dplyr::filter(gain|loss)
   
   
-  
+
+    
+    
   for(i in 1:nrow(species_cells_frame)){
     print(i)
     
-    y <- cells[i,1]
-    x <- cells[i,2]
+    x <- cells[i,1]
+    y <- cells[i,2]
     z <- cells[i,3]
     
     for(j in 1:length(species_TPD)){
       sp_dat <- species_TPD[[j]] %>% dplyr::filter(locomotion == x, foraging == y, body == z)
       if(nrow(sp_dat) > 0) {
-        species_cells_frame[i,4] <- paste(species_cells_frame[i,4],names(species_TPD)[j], sep = "/")
+        if(species_cells_frame[i,"gain"]){
+        species_cells_frame[i,6] <- paste(species_cells_frame[i,6],names(species_TPD)[j], sep = "/")
+        } else {
+          species_cells_frame[i,7] <- paste(species_cells_frame[i,7],names(species_TPD)[j], sep = "/")
+        }
       }
     }
-    species_cells_frame[i,4] <- gsub(pattern = "NA/", replacement = "", x = species_cells_frame[i,4]) 
+    
+    species_cells_frame[i,6] <- gsub(pattern = "NA/", replacement = "", x = species_cells_frame[i,6]) 
+    
+      species_cells_frame[i,7] <- gsub(pattern = "NA/", replacement = "", x = species_cells_frame[i,7])
+    
   }
   return(species_cells_frame)
+}
+
+
+
+TPD_species_occupancy <- function(data, sites1, sites2){
+
+  sites1_data <- TPD_plot_data(data, sites1)
+  sites2_data <- TPD_plot_data(data, sites2)
+    
+  
+  
+  
+  filled_cells_1 <- sites1_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>%
+    dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% filter(!is.na(prob)) %>% data.frame() %>% percentile_cells()
+  
+  filled_cells_2 <- sites2_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>%
+    dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% filter(!is.na(prob)) %>% data.frame() %>% percentile_cells() %>%
+    dplyr::rename(prob_2 = prob, percentile_2 = percentile)
+  
+  ## join the two data frames together with the secondary sites prob and percentile renamed
+  
+  diff_cells <- filled_cells_1 %>% dplyr::left_join(filled_cells_2, by = c("T1","T2","T3")) %>% data.frame()
+  
+  ##### work out with difference in prob/percentile of cells and whether the occupancy of the cell is new (functional gain) or lost (functional loss)
+  
+  cells_frame <- filled_cells_2 %>% dplyr::left_join(filled_cells_1, by = c("T1","T2","T3")) %>% dplyr::filter(is.na(prob)) %>%
+    dplyr::relocate(prob, .before = prob_2) %>% rbind(diff_cells) %>% dplyr::mutate(lost_cell = ifelse(is.na(prob_2),TRUE,FALSE),
+                                                                                      gain_cell = ifelse(is.na(prob),TRUE,FALSE),
+                                                                                      prob = ifelse(is.na(prob), 0, prob),
+                                                                                      prob_2 = ifelse(is.na(prob_2), 0, prob_2),
+                                                                                      diff = prob_2 - prob) 
+  
+  
+  test <- species_fit(cells_frame[c(1:20),])
+  
+}
+
+
+################################################################################
+#################################################################################
+## Function to detect holes ###################################################
+
+
+TPD_holes <- function(data, randata, sites, threshold){
+  ### extract the TPD data for teh two sets of sites 
+  
+  TPD_holes_list <- list()
+  
+  cellvolume <- data[["data"]][["cell_volume"]]
+  distancecharacteristic <- 1/(cellvolume^(1/3))
+  
+  if(!all(sites %in% names(data))|!all(sites %in% names(randata))){
+    sites <- sites[which(sites %in% names(data))]
+    sites <- sites[which(sites %in% names(randata))]
   }
+  
+  sites1_data <- TPD_plot_data(data,sites)
+  sites2_data <- TPD_plot_data(randata,sites)
+  
+  ## for the 3D plot need to just get the cells which are functionally occupied 
+  
+  filled_cells_1 <- sites1_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>%
+    dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% filter(!is.na(prob)) %>% data.frame()
+  
+  filled_cells_1 <- percentile_cells(filled_cells_1)
+  
+  filled_cells_2 <- sites2_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>%
+    dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% filter(!is.na(prob)) %>% data.frame()
+  
+  filled_cells_2 <- percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile) %>% 
+    dplyr::filter(percentile_2 <= threshold)
+  
+  
+  ####################################
+  # WORK OUT THE DIFFERENCE ##########
+  ####################################
+  
+  ## join the two data frames together with the secondary sites prob and percentile renamed
+  
+  diff_cells <- filled_cells_1 %>% dplyr::left_join(filled_cells_2, by = c("T1","T2","T3")) %>% data.frame()
+  
+  
+  ##### work out with difference in prob/percentile of cells and whether the occupancy of the cell is new (functional gain) or lost (functional loss)
+  
+  cells_frame <- filled_cells_2 %>% dplyr::left_join(filled_cells_1, by = c("T1","T2","T3")) %>% dplyr::filter(is.na(prob)) %>%
+    dplyr::relocate(prob, .before = prob_2) %>% rbind(diff_cells) %>% dplyr::mutate(lost_cell = ifelse(is.na(prob_2),TRUE,FALSE),
+                                                                                      gain_cell = ifelse(is.na(prob),TRUE,FALSE),
+                                                                                      prob = ifelse(is.na(prob), 0, prob),
+                                                                                      prob_2 = ifelse(is.na(prob_2), 0, prob_2),
+                                                                                      diff = prob_2 - prob) 
+  ###########################
+  # minimum convex hull surrounding observed site 
+  
+  cvh <- convhulln(filled_cells_1[,c("T1","T2","T3")], options = "FA")
+  cvh_vol <- cvh$vol
+  obs_cvh <- convhulln(filled_cells_1[,c("T1","T2","T3")]) 
+  
+  
+  
+  absent_cells <- cells_frame %>% dplyr::filter(gain_cell) %>% select(T1,T2,T3)
+  absent_cells$internal <- inhulln(obs_cvh,as.matrix(absent_cells))
+  absent_cells$external <- !absent_cells$internal
+  
+  abs_int <- absent_cells %>% dplyr::filter(internal)
+  abs_ext <- absent_cells %>% dplyr::filter(external)
+
+  
+
+   
+  clusters_int <- dist(abs_int[,c(1:3)], method = "euclidean")^2
+  clusters_ext <- dist(abs_ext[,c(1:3)], method = "euclidean")^2
+
+  
+  tree_int <- fastcluster::hclust(clusters_int,method = "ward.D2")
+  tree_ext <- fastcluster::hclust(clusters_ext,method = "ward.D2")
+  
+
+  holes_int <- data.frame(abs_int[,c(1:3)],holes = cutree(tree_int,h = distancecharacteristic))
+  holes_ext <- data.frame(abs_ext[,c(1:3)],holes = cutree(tree_ext,h = distancecharacteristic))
+  
+  
+  
+  obs_FD_metrics <- TPD_FD_metrics(data = PREDICTS_tpds, sites)
+  
+  ########
+  #######
+  #### so some metrics to get from these 1) number of holes 2) mean size of holes 3) proportion of internal volume to holes 4) 
+  
+  holes_int_metrics <- holes_int %>% dplyr::group_by(holes) %>% dplyr::summarise(size = n()) %>% ungroup() %>% dplyr::filter(size > 5) %>%
+    dplyr::mutate(hole__richness = cellvolume*size,proportion = (cellvolume*size)/obs_FD_metrics["total_sites","FRich"])
+  
+  holes_ext_metrics <- holes_ext %>% dplyr::group_by(holes) %>% dplyr::summarise(size = n()) %>% ungroup() %>%
+    dplyr::mutate(hole__richness = cellvolume*size,proportion = (cellvolume*size)/obs_FD_metrics["total_sites","FRich"])
+  
+  TPD_holes_list$internal$internal_hole_cells <- abs_int[,c(1:3)]
+  TPD_holes_list$internal$number_of_holes <- nrow(holes_int_metrics)
+  TPD_holes_list$internal$total_hole_volume <- sum(holes_int_metrics$hole__richness)
+  TPD_holes_list$internal$proportion_holes_volume <- sum(holes_int_metrics$proportion)
+  
+  TPD_holes_list$external$external_hole_cells <- abs_ext[,c(1:3)]
+  TPD_holes_list$external$number_of_holes <- nrow(holes_ext_metrics)
+  TPD_holes_list$external$total_hole_volume <- sum(holes_ext_metrics$hole__richness)
+  TPD_holes_list$external$proportion_holes_volume <- sum(holes_ext_metrics$proportion)
+  
+  
+  return(TPD_holes_list)
+  
+}
+
+TPD_site_check <- function(data,LU,realm){
+  
+  TPD_sample_check <- list()
+  
+  lu_sites <- TPD_LU %>% dplyr::filter(Realm == realm, Predominant_habitat == LU) %>% dplyr::distinct(SSBS) %>% pull()
+  
+  if(length(lu_sites) == 0){
+    return(TPD_sample_check)
+  } else {
+    
+    cumulative_df <- matrix(rep(NA,(4*length(lu_sites))), ncol = 4) %>% data.frame()
+    colnames(cumulative_df) <- c("Sample","FRich","FEve","FDiv")
+    cumulative_df$Sample <- 1:length(lu_sites)
+    
+    cumul_site <- c()
+    i <- 1
+    for(sit in sample(lu_sites, replace = FALSE)){
+      cumul_site <- c(cumul_site,sit)  
+      
+      fd_met <- TPD_FD_metrics(data, sites = cumul_site) %>% dplyr::filter(SSBS == "total_sites") %>% data.frame()
+      cumulative_df[i,c(2:4)] <- as.numeric(fd_met[1,c(2:4)])
+      i <- i + 1
+    }
+    
+    
+    
+    line_plot_FRich <- ggplot(data = cumulative_df, aes(x = Sample, y = FRich)) +
+      geom_line() +
+      geom_point()
+    
+    line_plot_FDiv <- ggplot(data = cumulative_df, aes(x = Sample, y = FDiv)) +
+      geom_line() +
+      geom_point()
+    
+    line_plot_FEve <- ggplot(data = cumulative_df, aes(x = Sample, y = FEve)) + 
+      geom_line() +
+      geom_point()
+    
+    multi_plot <- ggarrange(line_plot_FRich, line_plot_FEve, line_plot_FDiv)
+    
+    
+    
+    TPD_sample_check$cumulative_df <- cumulative_df
+    TPD_sample_check$ggplots <- multi_plot
+    
+    return(TPD_sample_check)
+    
+  }
+}
