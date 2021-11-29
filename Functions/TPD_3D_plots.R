@@ -15,6 +15,7 @@ require(magrittr) ## piping
 require(tidyverse) ## data manipulations
 require(rgl) ## 3D plotting
 require(geometry)
+require(fastcluster)
 
 
 options(rgl.printRglwidget = TRUE)
@@ -84,13 +85,13 @@ TPD_plot_data <- function(data,site){
   colnames(pl_dat) <- c("T1","T2","T3","prob")  
   pl_dat <- data.frame(pl_dat) 
   
-  T21_dat <- pl_dat %>% dplyr::group_by(T2,T1) %>% dplyr::summarise(prob = sum(prob, na.rm = TRUE)) %>%
+  T21_dat <- pl_dat %>% dplyr::group_by(T2,T1) %>% dplyr::summarise(prob = sum(prob, na.rm = TRUE), .groups = "drop") %>%
     dplyr::mutate(prob = ifelse(prob == 0,NA,prob))%>% set_colnames(c("T1","T2","prob")) %>% data.frame() %>% percentile_cells() %>% 
     dplyr::filter(!is.na(T1))
-  T31_dat <- pl_dat %>% dplyr::group_by(T3,T1) %>% dplyr::summarise(prob = sum(prob, na.rm = TRUE)) %>%
+  T31_dat <- pl_dat %>% dplyr::group_by(T3,T1) %>% dplyr::summarise(prob = sum(prob, na.rm = TRUE), .groups = "drop") %>%
     dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% set_colnames(c("T1","T2","prob")) %>% data.frame() %>% percentile_cells() %>% 
     dplyr::filter(!is.na(T1))
-  T23_dat <- pl_dat %>% dplyr::group_by(T2,T3) %>% dplyr::summarise(prob = sum(prob, na.rm = TRUE)) %>%
+  T23_dat <- pl_dat %>% dplyr::group_by(T2,T3) %>% dplyr::summarise(prob = sum(prob, na.rm = TRUE), .groups = "drop") %>%
     dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% set_colnames(c("T1","T2","prob")) %>% data.frame() %>% percentile_cells() %>% 
     dplyr::filter(!is.na(T1))
   
@@ -130,7 +131,7 @@ TPD_plot_data <- function(data,site){
 # constructing this plot comes in a number of stages and requires the use of the rgl package 
 
 
-TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab, method, title){
+TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab, method, title, save = FALSE, file){
 
       if(!all(sites %in% names(data))){
     sites <- sites[which(sites %in% names(data))]
@@ -336,6 +337,9 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab, method, title){
             color = T23_col_mat, lit = FALSE, smooth = FALSE)
   title3d(main = title, xlab = T2lab, ylab = T1lab, zlab = T3lab)
   
+  if(save){
+    rgl.snapshot(file, fmt = 'png')
+  }
   
   
   
@@ -364,7 +368,7 @@ TPD_3d_plot <- function(data,sites,T1lab,T2lab,T3lab, method, title){
 # method <- "prob"
 
 
-TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab,method, title){
+TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab,method, title, save = FALSE, file){
   
   
   if(!all(sites1 %in% names(data))){
@@ -387,7 +391,7 @@ TPD_Diff_plot <- function(data,sites1,sites2,T1lab,T2lab,T3lab,method, title){
   
   filled_cells_1 <- percentile_cells(filled_cells_1)
   
-  filled_cells_2 <- sites2_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>% dplyr::summarise(prob = mean(prob, na.rm = TRUE)) %>%
+  filled_cells_2 <- sites2_data[["pl_dat"]] %>% dplyr::group_by(T2,T1,T3) %>% 
     dplyr::mutate(prob = ifelse(prob == 0,NA,prob)) %>% filter(!is.na(prob)) %>% data.frame()
   
   filled_cells_2 <- percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile)
@@ -733,6 +737,9 @@ T21_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
             color = T23_col_mat, lit = FALSE, smooth = FALSE)
   title3d(main = title, xlab = T2lab, ylab = T1lab, zlab = T3lab)
   
+  if(save){
+    rgl.snapshot(file, fmt = 'png')
+  }
   
 }
 
@@ -744,7 +751,7 @@ T21_col <- matrix(rep(min(sites1_data[["pl_dat"]]$T3),50*50),
 # method = "prob"
 # threshold <- 0.95
 
-TPD_ranDiff_plot <- function(data,randata,sites,T1lab,T2lab,T3lab,method,threshold,title){
+TPD_ranDiff_plot <- function(data,randata,sites,T1lab,T2lab,T3lab,method,threshold,title, save = FALSE, file){
   
   ### extract the TPD data for teh two sets of sites 
   
@@ -1121,6 +1128,10 @@ TPD_ranDiff_plot <- function(data,randata,sites,T1lab,T2lab,T3lab,method,thresho
             color = T23_col_mat, lit = FALSE, smooth = FALSE)
   title3d(main = title, xlab = T2lab, ylab = T1lab, zlab = T3lab)
   
+  if(save){
+    rgl.snapshot(file, fmt = 'png')
+  }
+  
   
 }
 
@@ -1194,6 +1205,11 @@ Calc_FEve <- function(data,sites = NULL, sites1 = NULL, sites2 = NULL) {
 ##############################################################
 #############################################################
 # Functional Divergence
+
+
+
+
+
 Calc_FDiv <- function(data,sites = NULL, sites1 = NULL,sites2 = NULL) {
   evaluation_grid <- data$data$evaluation_grid
   cell_volume <- data$data$cell_volume
@@ -1219,23 +1235,34 @@ Calc_FDiv <- function(data,sites = NULL, sites1 = NULL,sites2 = NULL) {
     functional_volume <- evaluation_grid[TPD > 0,
                                          , drop = F]
     for (j in 1:ncol(functional_volume)) {
-      functional_volume[, j] <- (functional_volume[,
-                                                   j] - min(functional_volume[, j]))/(max(functional_volume[,
-                                                                                                            j]) - min(functional_volume[, j]))
+      # relative distances along each axes from the minimum value
+      functional_volume[, j] <- (functional_volume[, j] - min(functional_volume[, j]))/(max(functional_volume[,j]) - min(functional_volume[, j]))
     }
     TPD_aux <- TPD[TPD > 0]
+    
+    ### centre point of all the points 
     COG <- colMeans(functional_volume, na.rm = T)
+    
+    ## calculate teh distances between the coordinates and the centre of gravity of the hypervolume 
     dist_COG <- function(x, COG) {
       result_aux <- stats::dist(rbind(x, COG))
       return(result_aux)
     }
+    ### get the distances 
     COGDist <- apply(functional_volume, 1, dist_COG,
                      COG)
+    
+    ## get the mean distance between points and centre of gravity 
     meanCOGDist <- mean(COGDist)
+    ### deviances away from the mean centre of gravity
     distDeviances <- COGDist - meanCOGDist
+    ##abundance weighted deviances 
     AWdistDeviances <- sum(TPD_aux * distDeviances)
+    ## absolute deviances 
     absdistDeviances <- abs(COGDist - meanCOGDist)
+    ## abundance weighted absolute distances from the centre of gravity
     AWabsdistDeviances <- sum(TPD_aux * absdistDeviances)
+    ## Functional Divergence equals 
     FDiv[k,"FDiv"] <- (AWdistDeviances + meanCOGDist)/(AWabsdistDeviances +
                                                          meanCOGDist)
     k <- k + 1
@@ -1290,8 +1317,10 @@ Calc_dissim <- function(data,sites1,sites2){
   TPD_j <- sites2_data[["pl_dat"]][["prob"]]
   
   
-  
+  ## sum of all the minimum
   O_aux <- sum(pmin(TPD_i, TPD_j))
+  
+  
   shared_aux <- which(TPD_i > 0 & TPD_j > 0)
   A_aux <- sum(pmax(TPD_i[shared_aux], TPD_j[shared_aux])) -
     O_aux
@@ -1365,36 +1394,26 @@ Calc_dissim_random <- function(data,randata,sites, threshold){
 
 species_fit <- function(cells){
   
-species_cells_frame <- data.frame(cells[,c(1:3)],
-                                  gain = cells[,"gain_cell"], loss = cells[,"lost_cell"],
-                                  potential_gain_species = NA, potential_loss_species = NA) %>%
-  dplyr::filter(gain|loss)
-  
+species_cells_frame <- data.frame(cells[,c(1:3)], occupying_species = NA)
   
 
     
-    
-  for(i in 1:nrow(species_cells_frame)){
+    for(i in 1:nrow(species_cells_frame)){
     print(i)
     
     x <- cells[i,1]
     y <- cells[i,2]
     z <- cells[i,3]
     
-    for(j in 1:length(species_TPD)){
-      sp_dat <- species_TPD[[j]] %>% dplyr::filter(locomotion == x, foraging == y, body == z)
+    for(j in 1:length(species_TPD[["TPDs"]])){
+      sp_dat <- species_TPD[["TPDs"]][[j]] %>% dplyr::filter(locomotion == x, foraging == y, body == z)
       if(nrow(sp_dat) > 0) {
-        if(species_cells_frame[i,"gain"]){
-        species_cells_frame[i,6] <- paste(species_cells_frame[i,6],names(species_TPD)[j], sep = "/")
-        } else {
-          species_cells_frame[i,7] <- paste(species_cells_frame[i,7],names(species_TPD)[j], sep = "/")
-        }
+        species_cells_frame[i,4] <- paste(species_cells_frame[i,4],names(species_TPD[["TPDs"]])[j], sep = "/")
       }
     }
     
-    species_cells_frame[i,6] <- gsub(pattern = "NA/", replacement = "", x = species_cells_frame[i,6]) 
+    species_cells_frame[i,4] <- gsub(pattern = "NA/", replacement = "", x = species_cells_frame[i,4]) 
     
-      species_cells_frame[i,7] <- gsub(pattern = "NA/", replacement = "", x = species_cells_frame[i,7])
     
   }
   return(species_cells_frame)
@@ -1497,7 +1516,7 @@ TPD_holes <- function(data, randata, sites, threshold){
   
   
   
-  absent_cells <- cells_frame %>% dplyr::filter(gain_cell) %>% select(T1,T2,T3)
+  absent_cells <- cells_frame %>% dplyr::filter(gain_cell) %>% dplyr::select(T1,T2,T3)
   absent_cells$internal <- inhulln(obs_cvh,as.matrix(absent_cells))
   absent_cells$external <- !absent_cells$internal
   
@@ -1547,6 +1566,8 @@ TPD_holes <- function(data, randata, sites, threshold){
   
 }
 
+
+
 TPD_site_check <- function(data,LU,realm){
   
   TPD_sample_check <- list()
@@ -1566,8 +1587,9 @@ TPD_site_check <- function(data,LU,realm){
     for(sit in sample(lu_sites, replace = FALSE)){
       cumul_site <- c(cumul_site,sit)  
       
-      fd_met <- TPD_FD_metrics(data, sites = cumul_site) %>% dplyr::filter(SSBS == "total_sites") %>% data.frame()
-      cumulative_df[i,c(2:4)] <- as.numeric(fd_met[1,c(2:4)])
+      fd_met <- TPD_FD_metrics(data, sites = cumul_site) 
+      fd_met <- data.frame(fd_met["total_sites",])
+      cumulative_df[i,c(2:4)] <- as.numeric(fd_met[1,])
       i <- i + 1
     }
     

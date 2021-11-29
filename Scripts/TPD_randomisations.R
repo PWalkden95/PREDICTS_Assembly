@@ -13,6 +13,7 @@ TPD_traits <- readRDS("Outputs/full_morpho_traits_list.rds")
 for_traits <- readRDS("Outputs/predicts_foraging_pcoa.rds")
 PREDICTS_TPD <- readRDS("Outputs/PREDICTS_sites_tpds.rds")
 
+sp <- data.frame(species = unique(TPD_traits$complete_traits$Birdlife_Name))
 
 randomisations <- randomisations[which(names(randomisations) %in% names(PREDICTS_TPD))]
 

@@ -157,7 +157,7 @@ require(future.apply)
 plan(multicore(workers = 8))
 
 
-PREDICTS_tpds <- future_lapply(PRED_sites[1:8],PREDICTS_TPD)
+PREDICTS_tpds <- future_lapply(PRED_sites,PREDICTS_TPD)
 
 
 eval_grid <- species_TPD(all_sp[1:20], method = "sds")
@@ -207,7 +207,7 @@ PREDICTS_TPD_forage <- function(site){
 }
 
 
-For_PREDICTS_tpds <- future_lapply(PRED_sites[1:8],PREDICTS_TPD_forage)
+For_PREDICTS_tpds <- future_lapply(PRED_sites,PREDICTS_TPD_forage)
 
 eval_grid <- TPDsMean(species = for_traits[["foraging_traits"]][["PCoA_Scores"]][1:10,1], 
                       means = for_traits[["foraging_traits"]][["PCoA_Scores"]][1:10,c(2:4)],

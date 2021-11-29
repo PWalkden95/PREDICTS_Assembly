@@ -59,7 +59,7 @@ require(tidyverse)
 ###########################################################
   ##########################################################
   
-  
+  dir.create("Outputs/LU_Realm_site_check")
   for(i in 1:length(Check_list)){
     if(is.null(Check_list[[i]]$ggplots)){
       next()
@@ -69,12 +69,15 @@ require(tidyverse)
     figure <- annotate_figure(figure,
                     top = text_grob(paste(names(Check_list)[i]), color = "red", face = "bold", size = 14))
     
+    
+    png(filename = paste(paste("Outputs/LU_Realm_site_check",gsub(names(Check_list)[i],pattern = "/",replacement = "_"), sep = "/"),".png",sep = ""))
     plot(figure)
+    dev.off()
     }
   ######################################################################################################  
   ######################################################################################################
   ######################################################################################################
-  
+
   
   # evaluating the FD metric plots some realm/land_use type combinTIONS HAVE suffiecients sites to compare
   
@@ -89,10 +92,27 @@ require(tidyverse)
   ## so lets just have a look at the Neotropics as an example
   
   dir.create("Outputs/TPD_3D_Plots")
-  
   for(r in realms){
-  dir.create(paste("Outputs/TPD_3D_Plots",r, sep = "/"))  
+    dir.create(paste("Outputs/TPD_3D_Plots",r, sep = "/"))  
   }
+  
+  
+  for(i in 1:nrow(combinations)){
+    realm <- as.character(combinations[i,"realm"]) 
+    LU <- as.character(combinations[i, "land_use"])
+    
+    sites_lu <- TPD_LU %>% dplyr::filter(Predominant_habitat == LU, Realm == realm) %>% dplyr::distinct(SSBS) %>% pull()
+    
+    
+  if(length(sites_lu) > 0){
+    TPD_3d_plot(data = PREDICTS_tpds, sites = sites_lu, T1lab = "Locomotion", T2lab = "Foraging", T3lab = "Body", method = "prob",
+                  save = TRUE, file = paste("Outputs/TPD_3D_Plots/",realm,"/",LU,"_TPD_plot.png",sep = ""),title = paste(realm,LU,sep = "_"))
+}
+    
+      }
+  
+  
+  
   
   
   dissim_list <- list()
@@ -139,9 +159,9 @@ require(tidyverse)
     LU_array[LU_combo[i,"LU2"],LU_combo[i,"LU1"],"Shared"] <- dissimilarity[["dissim"]][["P_shared"]]
     LU_array[LU_combo[i,"LU2"],LU_combo[i,"LU1"],"Not_shared"] <- dissimilarity[["dissim"]][["P_non_shared"]]
   
-    # TPD_Diff_plot(data = PREDICTS_tpds, sites1 = sites_1, sites2 =sites_2, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body",
-    #               method = "prob", title = paste("3D_TPD_Plot",LU_combo[i,"LU1"],LU_combo[i,"LU2"], sep = "_"))
-    # rgl.snapshot(paste("Outputs/TPD_3D_Plots/",r,"/",LU_combo[i,"LU1"],"_",LU_combo[i,"LU2"],"_difference_", "3dplot.png",sep = ""), fmt = 'png')
+     TPD_Diff_plot(data = PREDICTS_tpds, sites1 = sites_1, sites2 =sites_2, T1lab = "Locomotion", T2lab = "Foraging",T3lab = "Body",
+                   method = "prob", title = paste(r,"Difference",LU_combo[i,"LU1"],LU_combo[i,"LU2"], sep = ""),
+                   save = TRUE, file = paste("Outputs/TPD_3D_Plots/",r,"/",LU_combo[i,"LU1"],"_",LU_combo[i,"LU2"],"_difference_TPD_plot.png",sep = ""))
     
   }
     
@@ -156,7 +176,7 @@ require(tidyverse)
   
   
   ran_dissim_list <- list()
-  i <- 1
+  
   for(r in realms){
    
     if(r == "Afrotropic"){
