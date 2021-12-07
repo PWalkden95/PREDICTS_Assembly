@@ -1419,10 +1419,27 @@ species_cells_frame <- data.frame(cells[,c(1:3)], occupying_species = NA)
   return(species_cells_frame)
 }
 
+#########################################
+#########################################
+#########################################
+#########################################
 
 
 TPD_species_occupancy <- function(data, sites1, sites2){
 
+  
+  TPD_lost_gain <- list()
+  
+  if(!all(sites1 %in% names(data))){
+    sites1 <- sites1[which(sites1 %in% names(data))]
+  }
+  
+  if(!all(sites2 %in% names(data))){
+    sites2 <- sites2[which(sites2 %in% names(data))]
+  }
+  
+  
+  
   sites1_data <- TPD_plot_data(data, sites1)
   sites2_data <- TPD_plot_data(data, sites2)
     
@@ -1450,9 +1467,17 @@ TPD_species_occupancy <- function(data, sites1, sites2){
                                                                                       diff = prob_2 - prob) 
   
   
-  test <- species_fit(cells_frame[c(1:20),])
+  gain_species <- cells_frame %>% dplyr::filter(gain_cell) %>% dplyr::select(T1,T2,T3)
+  gain_sp <- species_fit(gain_species)
   
-}
+  lost_species <- cells_frame %>% dplyr::filter(lost_cell) %>% dplyr::select(T1,T2,T3)
+  lost_sp <- species_fit(lost_species)
+  
+  TPD_lost_gain$gain_species <- gain_sp
+  TPD_lost_gain$lost_species <- lost_sp
+
+  return(TPD_lost_gain)
+  }
 
 
 ################################################################################
@@ -1471,6 +1496,10 @@ TPD_holes <- function(data, randata, sites, threshold){
   if(!all(sites %in% names(data))|!all(sites %in% names(randata))){
     sites <- sites[which(sites %in% names(data))]
     sites <- sites[which(sites %in% names(randata))]
+  }
+  
+  if(is_empty(sites)){
+    return(TPD_holes_list)
   }
   
   sites1_data <- TPD_plot_data(data,sites)
@@ -1510,6 +1539,10 @@ TPD_holes <- function(data, randata, sites, threshold){
   ###########################
   # minimum convex hull surrounding observed site 
   
+  if(nrow(filled_cells_1) < 4){
+    return(TPD_holes_list)
+  }
+  
   cvh <- convhulln(filled_cells_1[,c("T1","T2","T3")], options = "FA")
   cvh_vol <- cvh$vol
   obs_cvh <- convhulln(filled_cells_1[,c("T1","T2","T3")]) 
@@ -1523,29 +1556,44 @@ TPD_holes <- function(data, randata, sites, threshold){
   abs_int <- absent_cells %>% dplyr::filter(internal)
   abs_ext <- absent_cells %>% dplyr::filter(external)
 
+  if(nrow(abs_int) == 0){
+    return(TPD_holes_list)
+  }
   
-
+  if(nrow(abs_ext) == 0){
+    return(TPD_holes_list)
+  }
+  
+  
+if(nrow(abs_int) < 2){
+  holes_int <- data.frame(abs_int[,c(1:3)], holes = 1)
+} else {
    
   clusters_int <- dist(abs_int[,c(1:3)], method = "euclidean")^2
-  clusters_ext <- dist(abs_ext[,c(1:3)], method = "euclidean")^2
-
-  
   tree_int <- fastcluster::hclust(clusters_int,method = "ward.D2")
-  tree_ext <- fastcluster::hclust(clusters_ext,method = "ward.D2")
-  
-
   holes_int <- data.frame(abs_int[,c(1:3)],holes = cutree(tree_int,h = distancecharacteristic))
+
+}
+  
+  if(nrow(abs_ext) < 2){
+    holes_ext <- data.frame(abs_ext[,c(1:3)], holes = 1)
+  } else {
+  
+  clusters_ext <- dist(abs_ext[,c(1:3)], method = "euclidean")^2
+  tree_ext <- fastcluster::hclust(clusters_ext,method = "ward.D2")
   holes_ext <- data.frame(abs_ext[,c(1:3)],holes = cutree(tree_ext,h = distancecharacteristic))
   
+  }
   
+  ### observed sites FD metrics
   
   obs_FD_metrics <- TPD_FD_metrics(data = PREDICTS_tpds, sites)
-  
+
   ########
   #######
   #### so some metrics to get from these 1) number of holes 2) mean size of holes 3) proportion of internal volume to holes 4) 
   
-  holes_int_metrics <- holes_int %>% dplyr::group_by(holes) %>% dplyr::summarise(size = n()) %>% ungroup() %>% dplyr::filter(size > 5) %>%
+  holes_int_metrics <- holes_int %>% dplyr::group_by(holes) %>% dplyr::summarise(size = n()) %>% ungroup() %>%
     dplyr::mutate(hole__richness = cellvolume*size,proportion = (cellvolume*size)/obs_FD_metrics["total_sites","FRich"])
   
   holes_ext_metrics <- holes_ext %>% dplyr::group_by(holes) %>% dplyr::summarise(size = n()) %>% ungroup() %>%

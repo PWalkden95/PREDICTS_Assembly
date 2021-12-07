@@ -1239,6 +1239,14 @@ write_rds(dispersal_prob, file = "Outputs/sp_dispersal_probabilities.rds")
 
 An ideal approach for estimating species specific environmental affinities would be to quantify directly habitat requirements and phsiological limits (potentially by performing species distribution modelling whose output is a probability of presence based on the environmental conditions at a cell). I think that these maps may be available from Stephen Willis in Durham so will need to ask Joe about these. Lessard cautions against using the same data to derive environmental affinities as used for delineating the species pool to avoid the risk of circular reasoning so getting these projections would be useful as they'll defintely be based on new data.
 
+```{r environmental affinities}
 
+SDM_sp <- list.files("../../Datasets/Bird_SDM_Projections_Probability/")
+sp <- gsub(pattern = "_", replacement = " ", x = SDM_sp)
+sp <- gsub(pattern = ".rds", replacement = "", x = sp)
+
+miss_sp <- assembly_species[which(!(assembly_species %in% sp))]
+
+```
 
 

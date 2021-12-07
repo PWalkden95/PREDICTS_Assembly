@@ -119,7 +119,7 @@ require(tidyverse)
   for(r in realms){
     
     if(r == "Afrotropic"){
-      land_uses <- c("Cropland","Primary forest","Primary non-forest", "Secondary vegetation","Plantation forest")
+      land_uses <- c("Cropland","Primary forest","Primary non-forest", "Secondary vegetation","Plantation forest","Pasture")
     }
     if(r == "Australasia"){
       land_uses <- c("Primary forest","Primary non-forest", "Secondary vegetation")
