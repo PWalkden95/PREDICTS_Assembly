@@ -39,16 +39,16 @@ panel.nest<- function(x, y){
   y_name <- axis_col(data[,,1],y)
   r_2 <- round(data[,,2][x_name,y_name], digits = 2)
   r_3 <- round(data[,,3][x_name,y_name], digits = 2)
-  txt_2 <- paste0("Nestedness = ", r_2)
-  txt_3 <- paste0("Turnover = ", r_3)
+  txt_2 <- paste0("Shared = ", r_2)
+  txt_3 <- paste0("Not_shared = ", r_3)
   cex.cor_2 <- 0.8/strwidth(txt_2)
   cex.cor_3 <- 0.8/strwidth(txt_3)
   text(0.5, 0.7, txt_2, cex = cex.cor_2+0.1, font = 2)
   text(0.5, 0.3, txt_3, cex = cex.cor_3+0.1, font = 2)
 }
 
-col_names <- c("Primary forest", "Primary non-forest", "Secondary vegetation", "Plantation forest", "Cropland", "Pasture", "Urban")
-diag_colours <- c("olivedrab4","chartreuse1","olivedrab3","lightgreen","gold1","khaki","ivory4")
+col_names <- c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Cropland", "Pasture","Intensive agriculture","Minimal agriculture", "Urban")
+diag_colours <- c("olivedrab4","olivedrab3","lightgreen","gold1","khaki","gold1","khaki","ivory4")
 names(diag_colours) <- col_names
 
 diag.pan<- function(x){
