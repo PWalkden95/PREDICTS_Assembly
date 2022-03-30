@@ -1,0 +1,1447 @@
+---
+title: "Hypervolume_analyses"
+author: "Patrick Alexander Walkden"
+date: "29/10/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+library(rgl)
+setupKnitr(autoprint = TRUE)
+knitr::knit_hooks$set(webgl = hook_webgl)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Hypervolume Analyses
+
+Following generating the species pool and performing randomisations it's time to look at how the occupancy of functional trait space as described by the TPD functions is distributed within each land-use and how the structure of this trait space differs across land-use types and compared to null communities. 
+
+The structure of functional trait space characterized by hypervolumes can be described in a number of ways, as well as the typical metrics of Functional richness, divergence and evenness, a measure of "holeyness" can be determined. Holeyness within hypervolumes indicates empty functional space and potentially an unoccupied niche as a result of extinctions or trait combinations that are unfeasible in an environmental context.[REF x 2]
+
+First, I am going to visualize the structure of occupied trait space across land uses within biogeographic realms 
+
+
+
+```{r load in packages and data, echo = FALSE}
+rm(list = ls())
+
+## loading in tidyverse and the functions I have created to analyise and visualise the differences between TPD hypervolumes
+require(tidyverse)#
+require(ggpubr) # to aggregate plots
+require(lme4)
+require(ggResidpanel)
+require(multcomp)
+require(future)
+require(future.apply)
+require(car)
+require(lmerTest)
+require(merTools)
+require(wmfdata)
+require(emmeans)
+
+source("../Functions/TPD_3D_plots.R")
+
+## load in all the data
+
+ PREDICTS_tpds <- readRDS("../Outputs/PREDICTS_sites_tpds.rds") # morphometric TPDs of observed sites
+ PREDICTS_tpds_site_ranges <- readRDS("../Outputs/PREDICTS_sites_tpds_site_ranges.rds")
+ 
+ PREDICTS_randomisations <- readRDS("../Outputs/randomisations_TPD_morpho.rds") ## morphometric TPD of randomisised sites 
+ PREDICTS_randomisations_site_ranges <- readRDS("../Outputs/randomisations_TPD_morpho_site_ranges.rds")
+ 
+ 
+ PREDICTS_full <- readRDS("../Outputs/refined_predicts.rds")
+ 
+ PREDICTS <- PREDICTS_full %>%  ## PREDICTS data 
+   dplyr::distinct(SSBS, Predominant_habitat, Realm, SS) %>% ## pull out land_use type, Subregion, realm etc
+   dplyr::mutate(Predominant_habitat = ifelse(grepl(Predominant_habitat, pattern = "secondary", ignore.case = TRUE), "Secondary vegetation",paste(Predominant_habitat)), 
+                 Predominant_habitat = ifelse(grepl(Predominant_habitat, pattern = "primary", ignore.case = TRUE), "Primary vegetation",paste(Predominant_habitat))) %>% data.frame() ## merge all secondary sites together
+ 
+ 
+ species_TPD <- readRDS("../Outputs/species_tpds_morpho.rds") ## individual species TPDs 
+ 
+ Forage <- readRDS(file = "../../PREDICTS_Taxonomy/PREDICTS_imputed_BL_traits_forage.rds")
+
+ drop_spp <- readRDS("../Outputs/assembly_drop_spp.rds")
+ 
+ species_pools <- readRDS("../Outputs/predicts_sites_species_pools.rds")
+
+
+```
+
+# site distribution
+
+First things first, lets see how the sites that have a TPD calculated for them are distributed across land-uses and biogeographic realms.
+
+
+```{r sites in lu and realm}
+ 
+### get the land uses and use intensity of all the sites TPDs could be caluclated for 
+
+ TPD_LU <- data.frame(SSBS = names(PREDICTS_tpds)) %>% dplyr::left_join(PREDICTS, by = "SSBS") %>% dplyr::filter(Predominant_habitat != "Cannot decide")
+### check a table
+ table(TPD_LU$Predominant_habitat, TPD_LU$Realm)
+```
+I have decided to pool together sites with biogeographic realms as
+
+Here we can see that there is quite an uneven spread of sites across the LU types and Realms so to check whether there are enough sites I am going to iteratively calculate functional diversity metrics for each LU-realm combination and if FD reaches an asymptote it will indicate that there are sufficent sites so that trait spaces can be compared.
+
+```{r LU realm combos, echo = FALSE, cache=TRUE, message=FALSE, results = 'hide'}
+
+### pull land_uses
+
+land_uses <- PREDICTS %>% dplyr::distinct(Predominant_habitat, .keep_all = FALSE) %>% dplyr::filter(Predominant_habitat != "Cannot decide") %>% 
+   pull() %>% as.character()
+
+## pull realms 
+
+realms <- as.character(unique(TPD_LU$Realm))
+   
+### get combinations of land uses and realms
+
+combinations <- expand.grid(land_uses,realms) %>% set_colnames(c("land_use","realm"))
+
+## check list for each combination I am adding each site in turn and calculating the resultant Functional Richness of the overall hypervolume - if the functional richness asymptotes before the sites run out then there are enough samples for the LUs to be compared  
+
+if(any(grepl(list.files("../Outputs"), pattern = "check_list"))){
+ Check_list <- readRDS(grep(list.files("../Outputs", full.names = TRUE), pattern = "check_list", value = TRUE)) 
+} else {
+
+  Check_list <- list()
+  for(i in 1:nrow(combinations)){
+  
+    Land_use <- as.character(combinations[i,"land_use"])
+    Realm <- as.character(combinations[i,"realm"])
+    
+    # This function will compute these metric and also produce a ggplot representation
+    
+    list <-   TPD_site_check(data = PREDICTS_tpds, LU = Land_use , realm = Realm)
+    
+    Check_list[[i]] <- list
+    names(Check_list)[i] <- paste(Land_use, Realm, sep = "/")
+  }
+  write_rds("../Outputs/realm_lu_check_list.rds", x = Check_list)
+}
+```
+Now let's have a look! I have checked all the plot but I am going to exhibit just a couple here 
+
+```{r realm checking}
+sites <- c(1,11,31)
+
+for(i in 1:length(Check_list)){
+  
+  if(is_empty(Check_list[[i]])){
+    next()
+  }
+    figure <- Check_list[[i]]$ggplots
+    figure <- annotate_figure(figure,
+                    top = text_grob(paste(names(Check_list)[i]), color = "red", face = "bold", size = 14))
+
+plot(figure)
+}
+
+
+```
+
+So upon examining the plots there are a good number of LU/realm combinations that have sufficient sites to reasonably represent the occupancy of functional trait space.
+
+Above are some examples of the variety of different patterns produced. Plantation forest in the Palearctic clearly is sufficeintly sampled. Pasture in the Afrotropics. although containing only a few sites does exhibit an asymptote and has been included for now but may need to be dropped later, and finally cropland in the Nearctic which is showing Functional richness is still increasing so therefore has not been sufficeintly sampled and therefore dropped. 
+
+So....
+
+In the Afrotropics we can compare Cropland, Pasture, Plantation forest, Primary forest, Primary non-forest and Secondary vegetation.
+
+In Australasia we can compare Pasture, Primary forest, Primary non-forest and Secondary vegetation.
+
+In Indo-Malay we can compare Cropland, Plantation forest, Primary forest, and Secondary vegetation.
+
+In the Nearctic we can compare Cropland, Pasture, Primary forest, Primary non-forest and Secondary vegetation.
+
+In the Neotropics we can compare Cropland, Pasture, Plantation forest, Primary forest, and Secondary vegetation.
+
+In the Palearctic we can compare Cropland, Pasture, Plantation forest, Primary forest, Primary non-forest and Secondary vegetation.
+
+
+Primary forest is the only land-use classification that is well represented ubiquitously across the realms, but there is also good coverage from secondary vegetation, plantation forest, pasture and, maybe, cropland. 
+
+Urban and primary non-forest classifications are represented well in only three of the realms... maybe a case for combining primary sites together??
+
+However, for now lets have a look at these trait spaces and use Primary forest sites in the Afrotropics as an example.
+
+
+```{r site occupancy visualisation, webgl = TRUE}
+
+pri_afro <- TPD_LU %>% dplyr::filter(Predominant_habitat == "Primary vegetation", Realm == "Afrotropic") %>% dplyr::distinct(SSBS) %>% pull()
+
+TPD_3d_plot(data = PREDICTS_tpds, sites = pri_afro, T1lab = "Locomotion", T2lab = "Foraging", T3lab = "Body", method = "prob", title = "TPD_test_plot")
+
+```
+
+In this plot you can see a 3D plot representing the occupancy of trait space in the three dimensions characterised by our axes of the forgaing, locomotory and body niches. 
+
+Scores on the body dimension track the size of the bird. 
+
+High scores on the locomotory axis represent long tarsus' with slight increases in secondary wing lengths, while lower scores indicate longer tails and minor increases in wing length. 
+
+The foraging niche is based on the dimensions of the beak and high scores representing wide, deep beaks and as scores decrease beaks tend towards those that are longer and thinner. 
+
+It's all well and good being able to represent these trait spaces but what do they represent and how do they differ across land use gradients within biogeographic realms.
+
+```{r FD_TPD metrics, fig.width= 10}
+
+## create a list with the land use classifications for each realm
+
+
+
+
+
+if(any(grepl(list.files("../Outputs"), pattern = "site_level_FD_model_data"))){
+ plot_data <- readRDS(grep(list.files("../Outputs", full.names = TRUE), pattern = "/site_level_FD_model_data", value = TRUE)) 
+} else {
+plot_data <- c()
+
+for(r in realms){
+  
+# get the land uses 
+  
+  
+  
+        ## iterate through the land uses 
+    for(LU in land_uses){
+  
+  ## get the sites of that land use type in a particular realm  
+    
+  lu_sites <- TPD_LU %>% dplyr::filter(Predominant_habitat == LU, Realm == r) %>% dplyr::distinct(SSBS) %>% pull()
+  
+  if(is_empty(lu_sites)){
+    next()
+  }
+  ## calcualte FRich, FDiv and FEve metrics making sure to mark those values that relate to individual sites values or combined
+  
+  metrics <- TPD_FD_metrics(data = PREDICTS_tpds_site_ranges, sites = lu_sites)
+  metrics$SSBS <- rownames(metrics)
+  metrics$Realm <- r
+  metrics$Land_use <- LU
+  metrics <- metrics %>% merge(TPD_LU[,c("SSBS","SS")], by = "SSBS")
+  plot_data <- rbind(plot_data,metrics)
+  }
+  
+}
+write_rds(file = "../Outputs/site_level_FD_model_data.rds", plot_data)
+}
+
+
+```
+
+```{r}
+
+
+
+plot_data$Land_use <- factor(plot_data$Land_use, levels = c("Primary vegetation", "Secondary vegetation","Plantation forest",
+                                                                      "Pasture","Cropland","Urban"))
+plot_data$Realm <- factor(plot_data$Realm)
+plot_data$Realm <- relevel(plot_data$Realm, ref = "Neotropic")
+
+
+
+hist(plot_data$FRich)
+hist(sqrt(plot_data$FRich), breaks = 10)
+hist(log(plot_data$FRich), breaks = 10)
+
+
+hist(plot_data$FDis)
+
+hist(plot_data$FEve)
+
+
+
+mod_rich <- lmer(log(FRich) ~ Land_use + Realm + (1|SS) , data = plot_data)
+mod_dis <- lmer(FDis ~ Land_use*Realm + (1|SS) , data = plot_data)
+mod_eve <- lmer(FEve ~ Land_use*Realm + (1|SS) , data = plot_data)
+
+
+```
+
+
+```{r}
+summary(mod_rich)
+car::Anova(mod_rich)
+```
+
+```{r}
+summary(mod_dis)
+car::Anova(mod_dis, type = "II")
+
+ggResidpanel::resid_panel(mod_dis)
+
+test <- lsmeans(mod_dis, pairwise ~ Land_use*Realm, adjust = "tukey")
+
+
+hehe <- summary(test)[["contrasts"]]
+```
+
+```{r}
+summary(mod_eve)
+car::Anova(mod_eve)
+```
+
+
+
+```{r}
+
+  
+
+pred_mod <- data.frame(Realm = c(rep("Afrotropic",5),
+                       rep("Australasia",4),
+                       rep("Indo-Malay",4),
+                       rep("Nearctic",4),
+                       rep("Neotropic",6),
+                       rep("Palearctic",6)),
+                       Land_use = c("Primary vegetation","Pasture","Plantation forest","Secondary vegetation", "Cropland",
+                                    "Primary vegetation","Pasture","Secondary vegetation","Urban",
+                                    "Primary vegetation","Plantation forest","Secondary vegetation", "Cropland",
+                                    "Primary vegetation","Pasture", "Cropland","Urban",
+                                    "Primary vegetation","Pasture","Plantation forest","Secondary vegetation", "Cropland","Urban",
+                                    "Primary vegetation","Pasture","Plantation forest","Secondary vegetation", "Cropland", "Urban"))
+
+
+
+
+
+mix_model_boot <- function(model = list(),newdata, transformation = c("none","log","sqrt","logit")){
+
+ 
+  data <- newdata
+   
+  pred_fun <- function(x){
+  as.numeric(predict(x, newdata = data, re.form = NA))
+}
+  
+full_boot_models <- c()
+  
+
+  for(i in 1:length(model)){
+  
+    FD_met <- unlist(str_split(as.character(model[[i]]@call)[2], pattern = " "))[1]
+  
+  
+ 
+data$estimate <- NA
+data$upper <- NA
+data$lower <- NA
+
+booted_mod <- bootMer(model[[i]], FUN = function(x) pred_fun(x), nsim = 200)
+
+
+if(transformation[i] == "none"){
+data$estimate <- booted_mod$t0
+bootstraps <- booted_mod$t
+} else {
+  if(transformation[i] == "log"){
+   data$estimate <- exp(booted_mod$t0)
+   bootstraps <- exp(booted_mod$t)
+   FD_met <- unlist(strsplit(unlist(strsplit(FD_met, split = "\\("))[2], split = "\\)"))[1]
+  
+   } else {
+  if(transformation[i] == "sqrt"){
+    data$estimate <- booted_mod$t0^2
+    bootstraps <- booted_mod$t^2
+    FD_met <- unlist(strsplit(unlist(strsplit(FD_met, split = "\\("))[2], split = "\\)"))[1]
+  } else {
+      if(transformation == "logit")
+      data$estimate <- boot::inv.logit(booted_mod$t0)
+      bootstraps <- boot::inv.logit(booted_mod$t)
+    }
+    
+  } 
+}
+
+
+
+ninety_five_boot <- c()
+
+for(col in 1:ncol(bootstraps)){
+trim_col <- bootstraps[,col]
+
+trim_col <- trim_col[trim_col >as.numeric(quantile(bootstraps[,col],0.025)) &
+           trim_col <as.numeric(quantile(bootstraps[,col],0.975))]
+
+
+ninety_five_boot <- cbind(ninety_five_boot,trim_col)  
+    
+}
+
+ninety_five_boot <-  data.frame(ninety_five_boot) %>% set_colnames(paste(data[,2], data[,1], sep = ";"))
+
+
+boot_plot <- ninety_five_boot %>% pivot_longer(cols = colnames(ninety_five_boot), names_to = "realm_lu")
+boot_plot$Realm <- unlist(str_split(boot_plot$realm_lu, pattern = ";"))[seq(2,nrow(boot_plot)*2,2)] 
+boot_plot$Land_use <- unlist(str_split(boot_plot$realm_lu, pattern = ";"))[seq(1,nrow(boot_plot)*2,2)]
+
+# for(i in 1:ncol(bootstraps)){
+#   newdata[i,"upper"] <- as.numeric(quantile(bootstraps[,i], 0.95))
+#   newdata[i,"lower"] <- as.numeric(quantile(bootstraps[,i], 0.05))
+# 
+#   }
+
+
+
+boot_plot$model <- FD_met
+
+full_boot_models <- rbind(full_boot_models, boot_plot)
+
+    }
+
+return(full_boot_models)
+}
+
+
+###############################################
+###############################################
+###############################################
+
+
+mix_boot_plot_FD <- function(boot_data){
+
+  boot_data$Land_use <- factor(boot_data$Land_use, levels = c( "Urban","Cropland","Pasture","Plantation forest","Secondary vegetation","Primary vegetation"))
+
+levels(boot_data$Land_use) <- c("Urb","Crp","Pas","PlnFor","SecVeg","PriVeg")
+
+
+
+for(r in c("Palearctic","Nearctic","Afrotropic","Neotropic","Indo-Malay","Australasia")){
+
+   pd <- position_dodge(0.5)
+  
+  p_d <- boot_data %>% dplyr::filter(Realm == r)
+  
+  
+
+  mod_rich_plot <- p_d %>% dplyr::filter(model == "FRich")
+ 
+
+  pri_intercept_rich <- median(mod_rich_plot %>% dplyr::filter(Land_use == "PriVeg") %>% pull(value))
+  
+  plot_rich <- ggplot(data = mod_rich_plot, aes(x = Land_use, y = value, fill = Land_use)) +
+  geom_hline(yintercept= pri_intercept_rich, linetype='dotted', col = 'black', lwd = 1) +
+  geom_flat_violin(alpha = 0.4, show.legend = FALSE, trim = TRUE, position = pd) +
+  geom_boxplot(width = 0.1, color="black", alpha=0.2, show.legend = FALSE, outlier.alpha = 0) +
+  xlab("Land_use")+
+  ylab("FRich")+
+  ggtitle(paste(r)) +
+  coord_flip() + 
+  theme(panel.background = element_blank())
+
+  
+  #### dis model 
+  
+    mod_dis_plot <- p_d %>% dplyr::filter(model == "FDis")
+ 
+pri_intercept_dis <- median(mod_dis_plot %>% dplyr::filter(Land_use == "PriVeg") %>% pull(value))
+    
+    
+  plot_dis <- ggplot(data = mod_dis_plot, aes(x = Land_use, y = value, fill = Land_use)) +
+  geom_hline(yintercept= pri_intercept_dis, linetype='dotted', col = 'black', lwd = 1) +
+  geom_flat_violin(alpha = 0.4, show.legend = FALSE, trim = TRUE, position = pd) +
+  geom_boxplot(width = 0.1, color="black", alpha=0.2, show.legend = FALSE, outlier.alpha = 0) +
+  ylab("FDis")+
+  ggtitle("") +
+  coord_flip() + 
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),panel.background = element_blank())
+  
+
+    #### eve model 
+  
+    mod_eve_plot <- p_d %>% dplyr::filter(model == "FEve")
+ 
+pri_intercept_eve <- median(mod_eve_plot %>% dplyr::filter(Land_use == "PriVeg") %>% pull(value))
+    
+  plot_eve <- ggplot(data = mod_eve_plot, aes(x = Land_use, y = value, fill = Land_use)) +
+  geom_hline(yintercept= pri_intercept_eve, linetype='dotted', col = 'black', lwd = 1) +
+  geom_flat_violin(alpha = 0.4, show.legend = FALSE, trim = TRUE, position = pd) +
+  geom_boxplot(width = 0.1, color="black", alpha=0.2, show.legend = FALSE, outlier.alpha = 0) +
+  ylab("FEve")+
+  ggtitle("") +
+  coord_flip() + 
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),panel.background = element_blank())
+
+  p <- ggpubr::ggarrange(plot_rich,plot_dis,plot_eve, nrow = 1,label.y = "Land use")
+  
+plot(p)
+
+#   geom_errorbar(aes(ymin=ifelse(lower< 0, 0, lower) , ymax= upper), colour="black", width=.1, position=pd, linetype = 1) +
+#   geom_point(position=pd,size=6)+
+#   xlab("Land use") +
+#   ylab("Holeyness") +
+#   scale_colour_hue(name="Use intensity",    # Legend label, use darker colors
+#                    breaks=c("Minimal", "Light","Intense","All"),
+#                    labels=c("Minimal", "Light","Intense","All"),
+#                    l=40) +                    # Use darker colors, lightness=40+
+#   expand_limits(y=0) +
+#   ggtitle(paste(r))+
+#   theme_classic() +
+#   geom_hline(yintercept= pri_intercept, linetype='dotted', col = 'red')+
+#   theme(legend.justification=c(1,0),
+#         legend.position=c(1,0.65),
+#         text = element_text(size = 20))+
+#   theme(axis.text.x = element_text(angle = 90))
+# 
+# plot(plot)
+}
+
+}
+
+mix_model_boots <- mix_model_boot(model = list(mod_rich,mod_dis,mod_eve), transformation = c("log","none","none"), newdata = pred_mod)
+
+mix_boot_plot_FD(mix_model_boots)
+
+
+```
+
+
+```{r site level beta diversity}
+
+site_level_beta <- readRDS("../Outputs/sites_tpd_beta_diversity.rds")
+
+slb_data <- c()
+for(r in realms){
+
+  realm_sites <- site_level_beta %>% dplyr::filter(Realm == r)
+  
+  
+  LUs <- land_uses
+  
+  
+  
+  combos <- expand.grid(LUs,LUs) %>% reorder_combinations() %>% data.frame()
+
+  valid_combos <- paste(combos[,1],combos[,2], sep = "_")
+
+  
+  valid_frame <- realm_sites %>% dplyr::filter(land_use_comp %in% valid_combos)
+
+  
+  slb_data <- rbind(slb_data, valid_frame)
+
+}
+
+hist(slb_data$beta)
+hist(car::logit(slb_data$beta))
+
+slb_data$logit_beta <- car::logit(slb_data$beta)
+
+slb_data$land_use_comp <- factor(slb_data$land_use_comp)
+slb_data$land_use_comp <- relevel(slb_data$land_use_comp, ref = "Primary vegetation_Primary vegetation")
+
+slb_data$Realm <- factor(slb_data$Realm)
+slb_data$Realm <- relevel(slb_data$Realm, ref = "Neotropic")
+
+beta_mod <- lmer(logit_beta ~ land_use_comp*Realm + (1|SS), data = slb_data)
+
+summary(beta_mod)
+car::Anova(beta_mod)
+
+slb_data$interaction <- interaction(slb_data$land_use_comp, slb_data$Realm)
+
+
+
+ggResidpanel::resid_panel(beta_mod)
+
+test <- lsmeans(beta_mod, pairwise ~ land_use_comp*Realm, adjust = "tukey")
+
+pairwise_sig <- summary(test)[["contrasts"]]
+
+
+```
+
+```{r beta diversity figures }
+
+beta_newdata <- slb_data %>% distinct(Realm, land_use_comp) %>% dplyr::select(Realm, land_use_comp)
+
+beta_boot <- mix_model_boot(model = list(beta_mod), newdata = beta_newdata, transformation = "logit")
+
+beta_levels <- c("Primary vegetation_Primary vegetation",
+  "Primary vegetation_Secondary vegetation",
+                      "Primary vegetation_Plantation forest",
+                      "Primary vegetation_Pasture",
+                      "Primary vegetation_Cropland",
+                      "Primary vegetation_Urban",
+  "Secondary vegetation_Secondary vegetation",
+                      "Secondary vegetation_Plantation forest",
+                      "Secondary vegetation_Pasture",
+                      "Secondary vegetation_Cropland",
+                      "Secondary vegetation_Urban",
+  "Plantation forest_Plantation forest",
+                      "Plantation forest_Pasture",
+                      "Plantation forest_Cropland",
+                      "Plantation forest_Urban",
+  "Pasture_Pasture",
+                      "Pasture_Cropland",
+                      "Pasture_Urban",
+  "Cropland_Cropland",
+                      "Cropland_Urban",
+  "Urban_Urban")
+
+
+beta_boot$Land_use_comp <- factor(beta_boot$Land_use, levels = beta_levels)
+
+
+source("../Functions/pairwise_beta_plots.R")
+
+pairwise_list <- list()
+for(r in realms){
+  b_fig <- pairwise_beta_plot(beta_data = beta_boot, realm = r)
+
+  pairwise_list[[r]] <- b_fig
+  
+  plot(b_fig)
+  }
+
+
+for(r in realms){
+png(filename = paste("../Figures/plots_for_figures/",".png", sep = r), width = 200, height = 150, units = "mm", res = 500)
+plot(pairwise_list[[r]])
+dev.off()
+}
+```
+
+These metrics can mask important changes in the geometry of trait space.
+
+
+
+
+
+## Combine into realms
+
+
+
+## Differences between hypervolumes
+
+Now let's calculate some beta-diversity metrics between the sites and characterise just how land use change is influencing the structure of functional trait space.
+
+```{r site dissimlarity}
+
+
+realm_land_uses <- list()
+realm_land_uses[["Afrotropic"]] <- c("Primary vegetation", "Secondary vegetation","Plantation forest","Pasture", "Cropland","Urban")
+realm_land_uses[["Australasia"]] <- c("Primary vegetation", "Secondary vegetation", "Pasture","Urban")
+realm_land_uses[["Indo-Malay"]] <- c("Primary vegetation","Secondary vegetation","Plantation forest","Cropland")
+realm_land_uses[["Nearctic"]] <- c("Primary vegetation", "Pasture","Cropland", "Urban")
+realm_land_uses[["Neotropic"]] <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban")
+realm_land_uses[["Palearctic"]] <- c("Primary vegetation","Secondary vegetation", "Plantation forest","Pasture","Cropland","Urban")
+
+## create a list to gather the beta diveristy metrics between each land use tyoe within biogeographic realm
+
+  dissim_list <- list()
+
+  
+  
+#  iterate through realms
+for(r in realms){
+    
+  # get the land uses 
+  
+  land_uses <- realm_land_uses[[r]]
+    
+  ## get each combination of land uses within the realm
+  
+  LU_combo <- matrix(gtools::combinations(n = length(land_uses), r = 2, v = land_uses,set = TRUE), ncol = 2) %>% data.frame() %>% set_colnames(c("LU1","LU2")) %>% reorder_combinations()
+  
+  ## create an empty array that is going to hold three pairwise matrices 1) beta diversity 2) beta partitioned into nestedness 3) turnover
+  
+  array_dimnames <- list(c(land_uses),c(land_uses),c("Dissimilarity","P_shared","P_non_shared"))
+  LU_array <- array(rep(NA,(length(land_uses)^2)*3),dim = c(length(land_uses),length(land_uses),3), dimnames = array_dimnames)
+  
+  ## for each combination
+  
+  for(i in 1:nrow(LU_combo)){
+    
+    # get each LU sites 
+    
+    sites_1 <- TPD_LU %>% dplyr::filter(Realm == r, Predominant_habitat == LU_combo[i,"LU1"]) %>% dplyr::distinct(SSBS) %>% pull()
+    sites_2 <- TPD_LU %>% dplyr::filter(Realm == r, Predominant_habitat == LU_combo[i,"LU2"]) %>% dplyr::distinct(SSBS) %>% pull()
+    
+    ## calculate the dissimilarity
+    
+    dissimilarity <- Calc_dissim(data = PREDICTS_tpds,sites1 = sites_1, sites2 = sites_2)
+    
+    ## assign the dissimilarity to the array 
+    
+    LU_array[LU_combo[i,"LU1"],LU_combo[i,"LU2"],"Dissimilarity"] <- dissimilarity[["dissim"]][["dissimilarity"]]
+    LU_array[LU_combo[i,"LU1"],LU_combo[i,"LU2"],"P_shared"] <- dissimilarity[["dissim"]][["P_shared"]]
+    LU_array[LU_combo[i,"LU1"],LU_combo[i,"LU2"],"P_non_shared"] <- dissimilarity[["dissim"]][["P_non_shared"]]
+    
+    LU_array[LU_combo[i,"LU2"],LU_combo[i,"LU1"],"Dissimilarity"] <- dissimilarity[["dissim"]][["dissimilarity"]]
+    LU_array[LU_combo[i,"LU2"],LU_combo[i,"LU1"],"P_shared"] <- dissimilarity[["dissim"]][["P_shared"]]
+    LU_array[LU_combo[i,"LU2"],LU_combo[i,"LU1"],"P_non_shared"] <- dissimilarity[["dissim"]][["P_non_shared"]]
+  
+    
+  }
+    ## assign this to the overall list
+  dissim_list[[r]][["dissim_array"]] <- LU_array
+  
+  
+  }
+
+## load in a dissimlarity plot with some code I adapted from pairwise plots 
+
+source("../Functions/PREDICTS_dissim_plot.R")
+
+for(i in 1:length(dissim_list)){
+PREDICTS_dissim_plot(dissim_list[[i]][[1]])
+  title(main = paste(names(dissim_list)[i]))
+}
+
+```
+
+## Mapping Foraging guilds on morphological trait space 
+
+Pigot et al 2020, showed that a species dietary guild can be well predicted by their position in functional trait space therefore it stands to reason that I may be able to identify areas in my multidimensional trait space that are strongly associated with different dietary guilds and as such be able to see how the occupancy of these distinct areas of trait space differ across land uses. The patterns of relative occupancy of these areas can shed light on how communities shift in response to changing land uses and whether certain dietary guilds are favoured in differing land uses with consequences of the subsequent functional and potential NCPs these communities provide, in a addition to identifying particular guilds that are impacted by a land use transition. 
+
+First off, mapping dietary guilds onto trait space. To do this I have taken the null communities of the sites of a particular land use and realm and identified the species that could potentially occupy the areas of trait space. If the species that could potentially occupy that area of trait space are 70% of the same dietary guild that cell is classified as such. 
+
+```{r mapping foraging guild to trait space, webgl = TRUE}
+
+## going to load in the list that contains the classified hypervolumes 
+
+TPD_forage_mapped <- readRDS("../Outputs/TPD_forage_mapping.rds")
+TPD_forage_mapped_random <- readRDS("../Outputs/TPD_forage_mapping_random.rds")
+
+## then we can plot this out so we can visulaise how the dietary guilds are distributed across trait space, keeping the same example as the previous plot lets have a look at primary forest in the Afrotropics
+
+
+map_data <- TPD_forage_mapped[["Neotropic"]][["Primary vegetation"]]
+
+TPD_forage_mapping_plot(data = PREDICTS_tpds, tpd_for_map = map_data, guilds = "all", T1lab = "Locomotion", T2lab = "Foraging", T3lab = "Body", title = "TPD_forage_map_plot" )
+
+```
+
+Then with this principle we can have a look at where each communities "centre of mass" is. Can probably term it differently but essentially what I mean is which areas of trait space are most occupied and to do this I can assign each occupied cell a percentile based on the probability of occupancy of each cell.
+
+```{r centre of mass}
+
+COM_list <- list()
+
+for(r in realms){
+
+
+    land_uses <- realm_land_uses[[r]]
+  
+  centre_of_mass_list <- c()
+  
+    for(LU in land_uses){
+    
+    lu_sites <- TPD_LU %>% dplyr::filter(Predominant_habitat == LU, Realm == r) %>% dplyr::distinct(SSBS) %>% pull()
+    
+    TPD_map <- TPD_forage_mapped[[r]][[LU]]
+    
+    
+      COM_df <- centre_of_mass_for(data = PREDICTS_tpds, sites = lu_sites, tpd_for_map = TPD_map, threshold = seq(0.1,1,0.1))
+  
+    
+    COM_df[["prop_COM"]]$Land_use <- LU
+    
+    centre_of_mass_list[[LU]] <- COM_df
+    
+    
+  
+
+    }
+  
+  COM_list[[r]] <- centre_of_mass_list
+}
+
+
+write_rds(x = COM_list, file = "../Outputs/Centre_of_Mass_list.rds")
+
+land_use_colours <- data.frame(land_use = c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Cropland", "Pasture", "Urban"), LU_col = c("olivedrab4","olivedrab3","lightgreen","gold1","khaki","ivory4"))
+
+ 
+
+for(r in realms){
+
+COM_df <- c()
+for(i in 1:length(COM_list[[r]])){
+  COM_df <- rbind(COM_df, COM_list[[r]][[i]][["prop_COM"]])
+}
+
+
+
+    COM_df$Land_use <- factor(COM_df$Land_use, levels = realm_land_uses[[r]])
+
+
+    COM_plot_df <- COM_df %>% dplyr::filter(percentile == 0.5, Trophic_niche %in% c("Fr","Gr","In", "Ne", "Om","Unclassified"))
+
+    COM_plot <- ggplot(data = COM_plot_df, aes(x = Land_use, y = prob_COM, group = Trophic_niche, colour = Trophic_niche)) +
+      geom_line() +
+      geom_point() +
+      theme_classic() +
+      ggtitle(paste(r)) +
+      theme(axis.text.x = element_text(angle = 90))
+
+    plot(COM_plot)
+
+
+
+}
+
+```
+ 
+```{r COM plots}
+#######
+#######
+## Point of COM
+
+ 
+COM_point_df <- c()
+COM_group_df <- c()
+for(r in realms){
+
+  for(i in 1:length(COM_list[[r]])){
+    
+    data_point <- COM_list[[r]][[i]][["prop_COM"]] %>% dplyr::filter(percentile == 1) %>% distinct(Land_use,percentile, T1,sdT1,T2,sdT2,T3,sdT3)
+    data_point$sdT1 <- ifelse(is.nan(data_point$sdT1),0,data_point$sdT1)
+    data_point$sdT2 <- ifelse(is.nan(data_point$sdT2),0,data_point$sdT2)
+    data_point$sdT3 <- ifelse(is.nan(data_point$sdT3),0,data_point$sdT3)
+    
+    data_point$Realm <- r
+    
+  COM_point_df <- rbind(COM_point_df,data_point)
+  
+  
+  data_COM <- COM_list[[r]][[i]][["prop_COM"]] %>% dplyr::filter(percentile == 0.5) %>% dplyr::select(Trophic_niche,Land_use,prop_COM,full_prop_COM,relative_prop_COM,prob_COM,relative_prob_COM)
+  
+  data_COM$Realm <- r
+  
+  COM_group_df <- rbind(COM_group_df, data_COM)
+  
+  }
+}
+
+################################ 
+### group COM plot
+################################
+
+land_uses <- c("Primary vegetation", "Secondary vegetation", "Plantation forest","Pasture","Cropland","Urban")
+
+
+Centre_mass <- COM_group_df %>% dplyr::group_by(Trophic_niche,Land_use) %>% 
+      dplyr::summarise(mean_prob_COM = mean(prob_COM)) %>% dplyr::ungroup() %>%
+      dplyr::mutate(Land_use = factor(Land_use, levels = land_uses),
+                    colour = ifelse(Trophic_niche == "In", "mediumblue","black"),
+                    colour = ifelse(Trophic_niche == "Fr", "red2",colour),
+                    colour = ifelse(Trophic_niche == "Gr", "orange2",colour),
+                    colour = ifelse(Trophic_niche == "Ne", "olivedrab",colour),
+                    colour = ifelse(Trophic_niche == "Om", "white",colour)) %>%
+  dplyr::filter(Trophic_niche %in% c("In","Fr","Gr","Ne","Om"))
+
+
+  COM_plot <- ggplot(data = Centre_mass, aes(x = Land_use, y = mean_prob_COM, group = Trophic_niche)) +
+      geom_line(show.legend = FALSE, lwd = 1, colour = Centre_mass$colour) +
+      geom_point(show.legend = FALSE, size = 3, colour = "black", shape = 21, fill = Centre_mass$colour) +
+      ylim(-0.1,0.55) +
+    geom_hline(yintercept = 0, colour = "black", linetype = "dotted") + 
+      theme(axis.title.y=element_blank(),
+            axis.ticks.y=element_blank(),
+            axis.text.y = element_blank(),
+            axis.title.x=element_blank(),
+            axis.ticks.x=element_blank(),
+            axis.text.x = element_blank(),
+            panel.background = element_rect(fill = 'lightgrey', color = 'lightgrey'),
+          panel.grid.major = element_line(color = 'lightgrey'),
+          panel.grid.minor = element_line(color = 'lightgrey')) 
+
+  
+  plot(COM_plot)
+  
+  png(filename = paste("../Figures/plots_for_figures/centre_mass_plot",".png", sep =""), width = 200, height = 150, units = "mm", res = 500)
+plot(COM_plot)
+dev.off()
+############################################
+############################################
+ 
+ COM_coords <- COM_point_df %>%
+   dplyr::mutate(colour = ifelse(Land_use == "Primary vegetation", "green4",NA),
+                 colour = ifelse(Land_use == "Secondary vegetation", "olivedrab3",colour),
+                 colour = ifelse(Land_use == "Plantation forest", "lightgreen",colour),
+                 colour = ifelse(Land_use == "Pasture", "khaki",colour),
+                 colour = ifelse(Land_use == "Cropland", "gold1",colour),
+                 colour = ifelse(Land_use == "Urban", "ivory4",colour))
+
+ 
+min_body_size <- abs(min(PREDICTS_tpds[["data"]][["evaluation_grid"]][["body"]]))
+ 
+
+###########################
+   #######################
+   ####################### GROUP PLOT
+ 
+
+ group_point <- COM_coords %>% dplyr::group_by(Land_use,colour) %>% 
+dplyr::summarise(meanT1 = weighted.mean(T1,w = 1/sdT1),meanT2 = weighted.mean(T2, w = 1/sdT2),meanT3 = weighted.mean(T3, w = 1/sdT3))
+
+
+point_sizes <- group_point$meanT3 + min_body_size
+
+     p <- ggplot(data = group_point, aes(x = meanT2, y = meanT1, group = Land_use)) +
+       geom_point(size = point_sizes^2 , shape = 21,show.legend = FALSE, fill = group_point$colour) +
+       xlim(min(COM_coords$T2),max(COM_coords$T2)) + 
+    ylim(min(COM_coords$T1),max(COM_coords$T1)) +
+       geom_hline(yintercept = 0) +
+       geom_vline(xintercept = 0) +
+      theme(axis.title.y=element_blank(),
+            axis.ticks.y=element_blank(),
+            axis.title.x=element_blank(),
+            axis.ticks.x=element_blank(),
+            panel.background = element_rect(fill = 'lightgrey', color = 'lightgrey'),
+          panel.grid.major = element_line(color = 'lightgrey'),
+          panel.grid.minor = element_line(color = 'lightgrey'))
+
+plot(p)     
+      
+##### at the realm level
+
+
+for(r in realms){
+  realm_plot <- COM_coords %>% dplyr::filter(Realm == r)
+
+  point_sizes <- realm_plot$T3 + min_body_size
+  
+  p <- ggplot(data = realm_plot, aes(x = T2, y = T1, group = Land_use)) +
+       geom_point(size = point_sizes ^ 2 , shape = 21,show.legend = FALSE, fill = realm_plot$colour) +
+    xlim(min(COM_coords$T2),max(COM_coords$T2)) + 
+    ylim(min(COM_coords$T1),max(COM_coords$T1)) +
+       geom_hline(yintercept = 0) +
+       geom_vline(xintercept = 0) +
+    ggtitle(paste(r)) +
+      theme(axis.title.y=element_blank(),
+            axis.ticks.y=element_blank(),
+            axis.title.x=element_blank(),
+            axis.ticks.x=element_blank(),
+            panel.background = element_rect(fill = 'lightgrey', color = 'lightgrey'),
+          panel.grid.major = element_line(color = 'lightgrey'),
+          panel.grid.minor = element_line(color = 'lightgrey'))
+  plot(p)
+  
+  }
+
+
+#################################################
+#################################################
+#################################################
+
+
+
+
+COM_group_mod <- COM_group_df %>% dplyr::filter(Trophic_niche %in% c("In","Om","Gr","Fr","Ne"))
+
+COM_group_mod$Trophic_niche <- factor(COM_group_mod$Trophic_niche)
+COM_group_mod$Trophic_niche <- relevel(COM_group_mod$Trophic_niche, ref = "In")
+
+COM_group_mod$Land_use <- factor(COM_group_mod$Land_use)
+COM_group_mod$Land_use <- relevel(COM_group_mod$Land_use, ref = "Primary vegetation")
+
+
+
+
+test_mod_2 <- glm(car::logit(prob_COM) ~ Land_use*Trophic_niche, data = COM_group_mod)
+
+summary(test_mod_2)
+
+car::Anova(test_mod_2)
+
+### with a significant interaction its kept in the model and means that the effect in land use on the COM is contingent on trophic niche.
+
+test_2_mod <- lsmeans(test_mod_2,pairwise ~ Land_use*Trophic_niche, adjust = "tukey")
+
+lala <- summary(test_2_mod)$contrasts
+
+
+
+
+```
+
+There are some good things to talk about here but I am going to move on swiftly now and inspect this later to look at how filled these distinct areas of trait space are compared to null communities. 
+
+```{r proportional occupancy of foraging trait space}
+
+
+
+prop_occ_list <- c()
+
+for(r in realms){
+
+  
+  land_uses <- realm_land_uses[[r]]
+
+  prop_occ_df <- c()
+  
+  
+    for(LU in land_uses){
+    
+      if(r %in% c("Neotropic","Australasia") & LU == "Urban"){
+        next()
+      }
+      
+    lu_sites <- TPD_LU %>% dplyr::filter(Predominant_habitat == LU, Realm == r) %>% dplyr::distinct(SSBS) %>% pull()
+    
+    TPD_map <- TPD_forage_mapped[[r]][[LU]]
+    TPD_map_random <- TPD_forage_mapped_random[[r]][[LU]]
+    
+  
+      
+    prop_occ <- proportional_occupancy(data = PREDICTS_tpds,randata = PREDICTS_randomisations,fordata = TPD_map, ranfordata = TPD_map_random, sites = lu_sites, standardise = TRUE)
+    
+    total_dissim <- Calc_dissim_random(data = PREDICTS_tpds, randata = PREDICTS_randomisations, sites = lu_sites, threshold = 1)
+    
+    td_row <- data.frame(similarity = 1 - total_dissim$dissim$dissimilarity, proportional_occupancy = NA, Trophic_niche = "Total")
+    prop_occ <- rbind(prop_occ,td_row)
+    
+    prop_occ$land_use <- LU
+    prop_occ$realm = r
+    
+    prop_occ_df <- rbind(prop_occ_df,prop_occ)
+    
+  }
+  
+  
+  
+  prop_occ_list[[r]] <- prop_occ_df
+    
+}
+
+
+
+land_uses <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban")
+
+prop_plot_df <- c()
+for(r in realms){
+  
+    prop_df <- prop_occ_list[[r]]
+
+
+    prop_plot_df <- rbind(prop_plot_df,prop_df)
+        
+}  
+
+    plot_df <- c()
+    
+    for(LU in land_uses){
+      
+    
+      LU_occ <- prop_plot_df %>% dplyr::filter(land_use == LU) %>% dplyr::filter(Trophic_niche %in% c("Total","Fr","Gr","In","Om","Ne")) %>% dplyr::mutate(similarity = ifelse(is.nan(similarity), 0, similarity))
+      
+      plot_df <- rbind(plot_df,LU_occ)
+      
+      }
+    
+
+    
+    prop_occ_plot_df <- plot_df %>% dplyr::group_by(Trophic_niche,land_use) %>% 
+      dplyr::summarise(mean_sim = mean(similarity)) %>% dplyr::ungroup() %>%
+      dplyr::mutate(land_use = factor(land_use, levels = land_uses),
+                    colour = ifelse(Trophic_niche == "In", "mediumblue","black"),
+                    colour = ifelse(Trophic_niche == "Fr", "red2",colour),
+                    colour = ifelse(Trophic_niche == "Gr", "orange2",colour),
+                    colour = ifelse(Trophic_niche == "Ne", "olivedrab",colour),
+                    colour = ifelse(Trophic_niche == "Om", "white",colour))
+    
+        
+    prop_plot <- ggplot(data = prop_occ_plot_df, aes(x = land_use, y = mean_sim , group = Trophic_niche)) +
+      geom_line(show.legend = FALSE, lwd = 1, colour = prop_occ_plot_df$colour) +
+      geom_point(show.legend = FALSE, size = 3, colour = "black", shape = 21, fill = prop_occ_plot_df$colour) +
+      scale_y_continuous(limits = c(-0.1,0.55), breaks = c(0,0.1,0.2,0.3,0.4,0.5)) +
+      geom_hline(yintercept = 0, linetype = "dotted",colour = "black") + 
+      theme(axis.title.y=element_blank(),
+            axis.text.y=element_blank(),
+            axis.ticks.y=element_blank(),
+            axis.title.x=element_blank(),
+            axis.ticks.x=element_blank(),
+            axis.text.x = element_blank(),
+            panel.background = element_rect(fill = 'lightgrey', color = 'lightgrey'),
+          panel.grid.major = element_line(color = 'lightgrey'),
+          panel.grid.minor = element_line(color = 'lightgrey')) 
+
+    plot(prop_plot)
+    
+    
+
+
+
+    
+
+png(filename = paste("../Figures/plots_for_figures/proportional_occupancy",".png", sep = r), width = 200, height = 150, units = "mm", res = 500)
+plot(prop_plot)
+dev.off()
+
+plot_df$Trophic_niche <- factor(plot_df$Trophic_niche)
+plot_df$Trophic_niche <- relevel(plot_df$Trophic_niche, ref = "Total")
+
+plot_df$land_use<- factor(plot_df$land_use)
+plot_df$land_use <- relevel(plot_df$land_use, ref = "Primary vegetation")
+
+test_mod <- glm(car::logit(similarity) ~ land_use + Trophic_niche, data = plot_df)
+
+
+test_2 <- lsmeans(test_mod,pairwise ~ land_use + Trophic_niche, adjust = "tukey")
+
+lala <- summary(test_2)$contrasts
+
+summary(test_mod)
+
+car::Anova(test_mod, type = "II")
+
+
+
+```
+
+
+
+```{r hypervolume holes}
+
+## create empty data frame to add metrics of interior and exterior holes 
+
+holes_frame <- c()
+
+
+land_uses <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban")
+
+realm_land_uses[["Australasia"]] <- realm_land_uses[["Australasia"]][realm_land_uses[["Australasia"]] != "Urban"]
+realm_land_uses[["Neotropic"]] <- realm_land_uses[["Neotropic"]][realm_land_uses[["Neotropic"]] != "Urban"]
+
+
+for(r in realms){
+  
+  ### get the land uses 
+  
+  ## get proportion and volume of interior and exterior holes 
+  hole_mat <- matrix(rep(NA,length(land_uses)*11), ncol = 11) %>% data.frame()
+  rownames(hole_mat) <- land_uses
+  colnames(hole_mat) <- c("land_use","total_hole_volume_int","proportion_to_observed_int","total_hole_volume_ext","proportion_to_observed_ext","Fr","In","Gr","Ne","Om","other")
+    #iterate through land uses 
+  for(LU in land_uses){
+  
+    
+    hole_mat[LU,"land_use"] <- LU
+  
+    
+      if(!(LU %in% realm_land_uses[[r]])){
+  hole_mat[LU,c(2:ncol(hole_mat))] <- 0
+    } else {
+    
+      
+  lu_sites <- TPD_LU %>% dplyr::filter(Predominant_habitat == LU, Realm == r) %>% dplyr::distinct(SSBS) %>% pull()
+  
+  ## calculate hole metrics with a threshold of 0.95 quantile from the randomisations to be considered a hole 
+
+  
+  holes <- TPD_holes(data = PREDICTS_tpds, randata = PREDICTS_randomisations, sites = lu_sites, threshold = 1)
+  
+  ### add the internal and external metrics to the data frame
+  tpd_map_hole <- TPD_forage_mapped_random[[r]][[LU]]
+  
+  holes_xyz <- holes[["internal"]][["internal_hole_cells"]]
+  
+  holes_xyz_for <- holes_xyz %>% merge(tpd_map_hole[,c("T1","T2","T3","Trophic_niche")], by = c("T1","T2","T3")) %>% dplyr::group_by(Trophic_niche) %>% dplyr::summarise(count = n()/nrow(holes_xyz))
+  
+  
+  
+  hole_mat[LU,c(2:5)] <- c(unlist(holes$internal[c("total_hole_volume","proportion_holes_volume")]),
+                      unlist(holes$external[c("total_hole_volume","proportion_holes_volume")]))
+  
+  for(col in colnames(hole_mat)[6:10]){
+    for_val <- (holes_xyz_for %>% dplyr::filter(Trophic_niche == col) %>% pull(count)) * hole_mat[LU,"proportion_to_observed_int"]
+    
+    if(is_empty(for_val)){
+      next()
+    }
+    
+    hole_mat[LU,col] <- for_val
+  }
+    }  
+    
+    
+  hole_mat[LU,"other"] <- (holes_xyz_for %>% dplyr::filter(!(Trophic_niche %in% c("Fr","In","Gr","Ne","Om"))) %>% dplyr::summarise(other_prop = sum(count)) %>% pull(other_prop)) * hole_mat[LU,"proportion_to_observed_int"]
+  
+  
+    
+  }
+  
+  hole_mat <- data.frame(hole_mat) %>% pivot_longer(cols = c("Fr","Om","In","Gr","Ne","other"), names_to = "Trophic_niche") %>% 
+    data.frame()
+  
+  ### add columns for realm and LU
+  
+  hole_mat$Realm <- r
+  hole_mat$land_use <- factor(hole_mat$land_use, levels = land_uses)
+  rownames(hole_mat) <- 1:nrow(hole_mat)
+  
+  
+  holes_frame <- rbind(holes_frame,hole_mat)  
+  
+}
+
+
+holes_frame$land_use <- factor(holes_frame$land_use, levels = c("Urban", "Cropland", "Pasture", "Plantation forest", "Secondary vegetation", "Primary vegetation"))
+## for each create a plot
+
+
+holes_frame$value <- ifelse(is.na(holes_frame$value),0,holes_frame$value)
+
+
+
+for(r in realms ){
+ hole_plot_data <- holes_frame %>% dplyr::filter(Realm == r)
+ 
+  p_rich <- ggplot() +
+    geom_bar(data = hole_plot_data, aes(x = land_use, y = value, fill = Trophic_niche),stat = "identity", show.legend = FALSE) +
+    scale_fill_manual(name = "Trophic_niche", values=c("red2","orange2","mediumblue","olivedrab","white","black")) +
+    geom_hline(yintercept = 0.5, linetype = "dotted", colour = "black") +
+    ylim(0,0.7)+
+    coord_flip() +
+      theme(axis.title.y=element_blank(),
+            axis.text.y=element_blank(),
+            axis.ticks.y=element_blank(),
+            axis.title.x=element_blank(),
+            axis.ticks.x=element_blank(),
+             axis.text.x=element_blank(),
+            panel.background = element_rect(fill = 'lightgrey', color = 'lightgrey'),
+          panel.grid.major = element_line(color = 'lightgrey'),
+          panel.grid.minor = element_line(color = 'lightgrey'))
+  
+  
+  #################
+  ## Centroid plot 
+  
+  realm_plot <- COM_coords %>% dplyr::filter(Realm == r)
+
+
+  
+  point_sizes <- realm_plot$T3 + min_body_size
+  
+  p <- ggplot(data = realm_plot, aes(x = T2, y = T1, group = Land_use)) +
+       geom_hline(yintercept = 0) +
+       geom_vline(xintercept = 0) +
+           geom_point(size = (point_sizes ^ 3)/2 , shape = 21,show.legend = FALSE, fill = realm_plot$colour) +
+    xlim(min(COM_coords$T2),max(COM_coords$T2)+0.1) + 
+    ylim(min(COM_coords$T1)-0.05,max(COM_coords$T1)+0.1) +
+      theme(axis.title.y=element_blank(),
+            axis.ticks.y=element_blank(),
+            axis.title.x=element_blank(),
+            axis.ticks.x=element_blank(),
+             axis.text.y=element_blank(),
+             axis.text.x=element_blank(),
+            panel.background = element_rect(fill = 'lightgrey', color = 'lightgrey'),
+          panel.grid.major = element_line(color = 'lightgrey'),
+          panel.grid.minor = element_line(color = 'lightgrey'))
+  
+  
+  
+  plot <- ggarrange(p_rich,p, nrow = 2, heights = c(3,2))  
+  
+  
+  plot(plot)
+  
+      
+png(filename = paste("../Figures/plots_for_figures/holesandcentroid",".png", sep = r), width = 200, height = 400, units = "mm", res = 500)
+plot(plot)
+dev.off()
+}
+ 
+
+mod_frame <- holes_frame %>% dplyr::filter(total_hole_volume_int != 0) %>% dplyr::distinct(land_use, Realm, .keep_all = TRUE)
+mod_frame$land_use <- factor(mod_frame$land_use)
+mod_frame$land_use <- relevel(mod_frame$land_use, ref = "Primary vegetation")
+
+mod_frame$Realm <- factor(mod_frame$Realm)
+
+
+
+hist(car::logit(mod_frame$proportion_to_observed_int))
+
+test <- glm(car::logit(proportion_to_observed_int) ~ land_use + Realm, data = mod_frame)
+
+
+summary(test)
+
+
+test <- lsmeans(test, pairwise ~ land_use, adjust = "tukey")
+
+pairwise_sig <- summary(test)[["contrasts"]]
+
+```
+
+
+## Pairwise species differences 
+
+
+```{r species difference, fig.width= 10}
+
+
+diff_species <- function(realm){
+  
+  dif_sp <- list()
+  
+  land_uses <- realm_land_uses[[realm]]
+  
+  ## get each combination of land uses within the realm
+  
+  LU_combo <- matrix(gtools::combinations(n = length(land_uses), r = 2, v = land_uses,set = TRUE), ncol = 2) %>% data.frame() %>% set_colnames(c("LU1","LU2")) %>% reorder_combinations()
+  
+
+  for(i in 1:nrow(LU_combo)){
+    
+    
+    sites_1 <- TPD_LU %>% dplyr::filter(Realm == realm, Predominant_habitat == LU_combo[i,"LU1"]) %>% dplyr::distinct(SSBS) %>% pull()
+    sites_2 <- TPD_LU %>% dplyr::filter(Realm == realm, Predominant_habitat == LU_combo[i,"LU2"]) %>% dplyr::distinct(SSBS) %>% pull()
+    
+    
+    loss_gain <- TPD_species_occupancy(data = PREDICTS_tpds, randata = PREDICTS_randomisations,sites1 = sites_1, sites2 = sites_2)
+    
+    gain_sp <- split_sp_func(pool_sp(loss_gain$gain[["gain_species"]], sites = c(sites_2), pool = "0.9"))
+    lost_sp <- split_sp_func(pool_sp(loss_gain$lost[["lost_species"]], sites = c(sites_1), pool = "0.9"))
+    
+    
+    dif_sp[[paste(LU_combo[i,"LU1"],LU_combo[i,"LU2"], sep = "_")]]$gain <- gain_sp  
+    dif_sp[[paste(LU_combo[i,"LU1"],LU_combo[i,"LU2"], sep = "_")]]$gain_vol <- loss_gain$gain$gain_volume
+    
+    dif_sp[[paste(LU_combo[i,"LU1"],LU_combo[i,"LU2"], sep = "_")]]$lost <- lost_sp
+    dif_sp[[paste(LU_combo[i,"LU1"],LU_combo[i,"LU2"], sep = "_")]]$lost_vol <- loss_gain$lost$lost_volume
+    
+  }
+  
+  return(dif_sp)
+  
+}
+
+options(future.globals.maxSize = 8000 * 1024^2)
+
+if(any(grepl(list.files("../Outputs"), pattern = "pairwise_sp_difs.rds"))){
+  pairwise_sp_difs <- readRDS(grep(list.files("../Outputs",full.names = TRUE),pattern = "pairwise_sp_difs.rds", value = TRUE))
+} else{
+plan(multicore(workers = 8))
+
+realm_list <- lapply(realms, paste)
+
+pairwise_sp_difs <- future_lapply(realm_list, diff_species, future.label = TRUE)
+
+closeAllConnections()
+
+write_rds("Outputs/pairwise_sp_difs.rds", pairwise_sp_difs)
+}
+
+
+pairwise_diff_plot_sp <- c()
+
+for( r in realms){
+
+  land_uses <- realm_land_uses[[r]]
+  
+    
+  ## get each combination of land uses within the realm
+  
+  LU_combo <- matrix(gtools::combinations(n = length(land_uses), r = 2, v = land_uses,set = TRUE), ncol = 2) %>% data.frame() %>% set_colnames(c("LU1","LU2")) %>% reorder_combinations()
+
+  
+  for(i in 1:nrow(LU_combo)){
+  
+  LU_sp_difs <- pairwise_sp_difs[[r]][[i]]
+
+  gain_sp <- data.frame(Birdlife_Name = LU_sp_difs[["gain"]], sp_differences = "gain", Land_use = paste(LU_combo[i,1], LU_combo[i,2],sep = "/"), Realm = r, vol = LU_sp_difs[["gain_vol"]])
+  loss_sp <- data.frame(Birdlife_Name = LU_sp_difs[["lost"]], sp_differences = "lost", Land_use = paste(LU_combo[i,1], LU_combo[i,2],sep = "/"), Realm = r,vol = LU_sp_difs[["lost_vol"]])
+
+ sp_differences <- rbind(gain_sp,loss_sp) %>% dplyr::left_join(Forage[,c("Birdlife_Name", "Trophic_Level", "Trophic_Niche", "Foraging_Niche")], by = "Birdlife_Name")
+
+
+
+sp_differences$Trophic_Niche <- factor(sp_differences$Trophic_Niche)
+
+
+pairwise_diff_plot_sp <- rbind(pairwise_diff_plot_sp,sp_differences)
+
+
+}
+}
+  
+priority_combos <- c( "Primary vegetation/Secondary vegetation",
+                      "Primary vegetation/Plantation forest",
+                      "Primary vegetation/Pasture",
+                      "Primary vegetation/Cropland",
+                      "Primary vegetation/Urban",
+                      "Secondary vegetation/Plantation forest",
+                      "Secondary vegetation/Pasture",
+                      "Secondary vegetation/Cropland",
+                      "Secondary vegetation/Urban",
+                      "Plantation forest/Pasture",
+                      "Plantation forest/Cropland",
+                      "Plantation forest/Urban",
+                      "Pasture/Cropland",
+                      "Pasture/Urban",
+                      "Cropland/Urban")
+
+pairwise_diff_plot_sp$Land_use <- factor(pairwise_diff_plot_sp$Land_use,
+                                levels = priority_combos)
+
+
+pairwise_diff_plot_sp$Trophic_Niche <- factor(pairwise_diff_plot_sp$Trophic_Niche, levels = c("In", "Fr","Gr", "Ne", "Hb.T", "Hb.A", "Vt", "Aq.p","Om" ))
+
+pairwise_diff_plot_sp <- pairwise_diff_plot_sp %>% dplyr::mutate(Foraging_Niche = ifelse(Foraging_Niche == "For.Gen", "For.Gen","Spec"))
+
+
+
+
+for(r in realms){
+
+  data <- pairwise_diff_plot_sp%>% dplyr::filter(Realm == r)
+  
+ 
+  
+  barwidth <- 0.45
+  
+  for(d_g in c("In","Gr","Fr","Ne","Om")){
+  
+  p_d <- data %>% filter(Trophic_Niche == d_g) %>% group_by(Trophic_Niche, Land_use, sp_differences,vol, Foraging_Niche) %>% dplyr::summarise(count = n(), .groups = "drop") %>% dplyr::mutate(relative_sp_occupancy = count/vol) 
+  
+  if(nrow(p_d) == 0){
+    next()
+  }
+  
+   priority_order <- priority_combos[priority_combos %in% unique(p_d$Land_use)]
+
+  p_d$Land_use <- factor(p_d$Land_use, levels = priority_order)
+  
+  
+df_1 <- p_d %>% dplyr::filter(sp_differences == "gain")
+df_2 <- p_d %>% dplyr::filter(sp_differences == "lost")   
+
+
+hole_sp_plot <- ggplot() +
+  geom_bar(data = df_1, aes(x = as.numeric(Land_use), y = count, fill = factor(ifelse(Foraging_Niche == "For.Gen","Gain Generalist","Gain Specialist"), levels = c("Gain Specialist","Gain Generalist")) ), stat = "identity", width = barwidth) +
+  geom_bar(data = df_2, aes(x = as.numeric(Land_use) + barwidth , y = count, fill = factor(ifelse(Foraging_Niche == "For.Gen","Lost Generalist","Lost Specialist"),levels = c("Lost Specialist","Lost Generalist"))), stat = "identity", width = barwidth) +
+  facet_grid(. ~Trophic_Niche) +
+  scale_fill_manual(name = "Foraging_Niche", values=c("turquoise4","tomato3","seagreen4", "orange2")) +
+  ggtitle(paste(r,sep = "_")) +
+  theme_classic()+
+    theme(axis.text.x = element_text(angle = 90)) +
+  scale_x_continuous(name = "Station",
+                     limits = c(0.5, length(levels(p_d$Land_use))+1),
+                     breaks = unique(sort(as.numeric(p_d$Land_use))),
+                     labels = levels(p_d$Land_use)) 
+  
+
+
+
+
+plot(hole_sp_plot)
+
+  }
+}
+
+```
+

@@ -1,0 +1,584 @@
+---
+title: "holeyness_analysis_maybe_drop"
+author: "Patrick Alexander Walkden"
+date: "11/01/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load in packages and data, echo = FALSE}
+rm(list = ls())
+
+## loading in tidyverse and the functions I have created to analyise and visualise the differences between TPD hypervolumes
+require(tidyverse)#
+require(ggpubr) # to aggregate plots
+require(lme4)
+require(ggResidpanel)
+require(multcomp)
+source("../Functions/TPD_3D_plots.R")
+
+## load in all the data
+
+ PREDICTS_tpds <- readRDS("../Outputs/PREDICTS_sites_tpds.rds") # morphometric TPDs of observed sites
+ 
+ PREDICTS_randomisations <- readRDS("../Outputs/randomisations_TPD_morpho.rds") ## morphometric TPD of randomisised sites 
+ PREDICTS_randomisations_site_ranges <- readRDS("../Outputs/randomisations_TPD_morpho_site_ranges.rds")
+ 
+ 
+ PREDICTS_full <- readRDS("../Outputs/refined_predicts.rds")
+ 
+ PREDICTS <- PREDICTS_full %>%  ## PREDICTS data 
+   dplyr::distinct(SSBS, Predominant_habitat, Use_intensity, Biome, UN_subregion, Realm, SS) %>% ## pull out land_use type, Subregion, realm etc
+   dplyr::mutate(Predominant_habitat = ifelse(grepl(Predominant_habitat, pattern = "secondary", ignore.case = TRUE), "Secondary vegetation",paste(Predominant_habitat)), 
+                 Predominant_habitat = ifelse(grepl(Predominant_habitat, pattern = "primary", ignore.case = TRUE), "Primary vegetation",paste(Predominant_habitat))) %>% data.frame() ## merge all secondary sites together
+ 
+ species_TPD <- readRDS("../Outputs/species_tpds_morpho.rds") ## individual species TPDs 
+ 
+ Forage <- readRDS(file = "../../PREDICTS_Taxonomy/PREDICTS_imputed_BL_traits_forage.rds")
+
+ 
+ species_pools <- readRDS("../Outputs/predicts_sites_species_pools.rds")
+
+
+```
+
+# site distribution
+
+First things first, lets see how the sites that have a TPD calculated for them are distributed across land-uses and biogeographic realms.
+
+
+```{r sites in lu and realm}
+ 
+### get the land uses and use intensity of all the sites TPDs could be caluclated for 
+
+ TPD_LU <- data.frame(SSBS = names(PREDICTS_tpds)) %>% dplyr::left_join(PREDICTS) %>% dplyr::filter(Predominant_habitat != "Cannot decice",
+                                                                                                    Use_intensity != "Cannot decide")
+### check a table
+ table(TPD_LU$Predominant_habitat, TPD_LU$Realm)
+```
+I have decided to pool together sites with biogeographic realms as
+
+Here we can see that there is quite an uneven spread of sites across the LU types and Realms so to check whether there are enough sites I am going to iteratively calculate functional diversity metrics for each LU-realm combination and if FD reaches an asymptote it will indicate that there are sufficent sites so that trait spaces can be compared.
+
+```{r LU realm combos, echo = FALSE, cache=TRUE, message=FALSE, results = 'hide'}
+
+### pull land_uses
+
+land_uses <- PREDICTS %>% dplyr::distinct(Predominant_habitat, .keep_all = FALSE) %>% dplyr::filter(Predominant_habitat != "Cannot decide") %>% 
+   pull() %>% as.character()
+
+## pull realms 
+
+realms <- as.character(unique(TPD_LU$Realm))
+   
+### get combinations of land uses and realms
+
+combinations <- expand.grid(land_uses,realms) %>% set_colnames(c("land_use","realm"))
+
+## check list for each combination I am adding each site in turn and calculating the resultant Functional Richness of the overall hypervolume - if the functional richness asymptotes before the sites run out then there are enough samples for the LUs to be compared  
+
+if(any(grepl(list.files("../Outputs"), pattern = "check_list"))){
+ Check_list <- readRDS(grep(list.files("../Outputs", full.names = TRUE), pattern = "check_list", value = TRUE)) 
+} else {
+
+  Check_list <- list()
+  for(i in 1:nrow(combinations)){
+  
+    Land_use <- as.character(combinations[i,"land_use"])
+    Realm <- as.character(combinations[i,"realm"])
+    
+    # This function will compute these metric and also produce a ggplot representation
+    
+    list <-   TPD_site_check(data = PREDICTS_tpds, LU = Land_use , realm = Realm)
+    
+    Check_list[[i]] <- list
+    names(Check_list)[i] <- paste(Land_use, Realm, sep = "/")
+  }
+  write_rds("../Outputs/realm_lu_check_list.rds", x = Check_list)
+}
+```
+Now let's have a look! I have checked all the plot but I am going to exhibit just a couple here 
+
+```{r realm checking}
+sites <- c(1,11,31)
+
+for(i in sites){
+  
+  if(is_empty(Check_list[[i]])){
+    next()
+  }
+    figure <- Check_list[[i]]$ggplots
+    figure <- annotate_figure(figure,
+                    top = text_grob(paste(names(Check_list)[i]), color = "red", face = "bold", size = 14))
+
+plot(figure)
+}
+
+
+```
+
+So upon examining the plots there are a good number of LU/realm combinations that have sufficient sites to reasonably represent the occupancy of functional trait space.
+
+Above are some examples of the variety of different patterns produced. Plantation forest in the Palearctic clearly is sufficeintly sampled. Pasture in the Afrotropics. although containing only a few sites does exhibit an asymptote and has been included for now but may need to be dropped later, and finally cropland in the Nearctic which is showing Functional richness is still increasing so therefore has not been sufficeintly sampled and therefore dropped. 
+
+So....
+
+In the Afrotropics we can compare Cropland, Pasture, Plantation forest, Primary forest, Primary non-forest and Secondary vegetation.
+
+In Australasia we can compare Pasture, Primary forest, Primary non-forest and Secondary vegetation.
+
+In Indo-Malay we can compare Cropland, Plantation forest, Primary forest, and Secondary vegetation.
+
+In the Nearctic we can compare Cropland, Pasture, Primary forest, Primary non-forest and Secondary vegetation.
+
+In the Neotropics we can compare Cropland, Pasture, Plantation forest, Primary forest, and Secondary vegetation.
+
+In the Palearctic we can compare Cropland, Pasture, Plantation forest, Primary forest, Primary non-forest and Secondary vegetation.
+
+
+Primary forest is the only land-use classification that is well represented ubiquitously across the realms, but there is also good coverage from secondary vegetation, plantation forest, pasture and, maybe, cropland. 
+
+Urban and primary non-forest classifications are represented well in only three of the realms... maybe a case for combining primary sites together??
+
+However, for now lets have a look at these trait spaces and use Primary forest sites in the Afrotropics as an example.
+
+
+```{r site occupancy visualisation, webgl = TRUE}
+
+pri_afro <- TPD_LU %>% dplyr::filter(Predominant_habitat == "Primary vegetation", Realm == "Afrotropic") %>% dplyr::distinct(SSBS) %>% pull()
+
+TPD_3d_plot(data = PREDICTS_tpds, sites = pri_afro, T1lab = "Locomotion", T2lab = "Foraging", T3lab = "Body", method = "prob", title = "TPD_test_plot")
+
+```
+
+In this plot you can see a 3D plot representing the occupancy of trait space in the three dimensions characterised by our axes of the forgaing, locomotory and body niches. 
+
+Scores on the body dimension track the size of the bird. 
+
+High scores on the locomotory axis represent long tarsus' with slight increases in secondary wing lengths, while lower scores indicate longer tails and minor increases in wing length. 
+
+The foraging niche is based on the dimensions of the beak and high scores representing wide, deep beaks and as scores decrease beaks tend towards those that are longer and thinner. 
+
+It's all well and good being able to represent these trait spaces but what do they represent and how do they differ across land use gradients within biogeographic realms.
+
+```{r FD_TPD metrics, fig.width= 10}
+
+## create a list with the land use classifications for each realm
+
+realm_land_uses <- list()
+realm_land_uses[["Afrotropic"]] <- c("Primary vegetation", "Secondary vegetation","Plantation forest","Pasture","Cropland")
+realm_land_uses[["Australasia"]] <- c("Primary vegetation", "Secondary vegetation", "Pasture")
+realm_land_uses[["Indo-Malay"]] <- c("Primary vegetation","Secondary vegetation","Plantation forest","Cropland")
+realm_land_uses[["Nearctic"]] <- c("Primary vegetation", "Pasture","Cropland", "Urban")
+realm_land_uses[["Neotropic"]] <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland")
+realm_land_uses[["Palearctic"]] <- c("Primary vegetation","Secondary vegetation", "Plantation forest","Pasture","Cropland","Urban")
+
+```
+
+
+### What areas of trait space are 
+
+
+## Hypervolume holes
+
+
+```{r hypervolume holes}
+
+## create empty data frame to add metrics of interior and exterior holes 
+
+holes_frame <- c()
+
+for(r in realms){
+  
+  ### get the land uses 
+    
+  land_uses <- realm_land_uses[[r]]
+  
+  ## get proportion and volume of interior and exterior holes 
+  hole_mat <- matrix(rep(NA,length(land_uses)*4), ncol = 4) %>% data.frame()
+  rownames(hole_mat) <- land_uses
+  colnames(hole_mat) <- c("total_hole_volume_int","proportion_to_observed_int","total_hole_volume_ext","proportion_to_observed_ext" )
+  
+  #iterate through land uses 
+  
+  for(LU in land_uses){
+  
+  lu_sites <- TPD_LU %>% dplyr::filter(Predominant_habitat == LU, Realm == r) %>% dplyr::distinct(SSBS) %>% pull()
+  
+  ## calculate hole metrics with a threshold of 0.95 quantile from the randomisations to be considered a hole 
+  
+  holes <- TPD_holes(data = PREDICTS_tpds, randata = PREDICTS_randomisations, sites = lu_sites, threshold = 1)
+  
+  ### add the internal and external metrics to the data frame
+  
+  hole_mat[LU,] <- c(unlist(holes$internal[c("total_hole_volume","proportion_holes_volume")]),
+                     unlist(holes$external[c("total_hole_volume","proportion_holes_volume")]))
+  }
+  
+  ### add columns for realm and LU
+  
+  hole_mat$Realm <- r
+  hole_mat$Land_use <- land_uses
+  hole_mat$Land_use <- factor(hole_mat$Land_use, levels = land_uses)
+  rownames(hole_mat) <- 1:nrow(hole_mat)
+  
+  
+  holes_frame <- rbind(holes_frame,hole_mat)  
+  
+}
+
+
+holes_frame$Land_use <- factor(holes_frame$Land_use, levels = c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+## for each create a plot
+
+for(r in realms ){
+ hole_plot_data <- holes_frame %>% dplyr::filter(Realm == r)
+  
+  p_rich <- ggplot(data = hole_plot_data, aes(x = Land_use, y = proportion_to_observed_int)) +
+    geom_bar(stat = "identity") +
+    ggtitle(paste(r))
+    
+plot(p_rich)
+}
+ 
+
+
+
+```
+
+## Where are these holes? What species occupy the empty space?
+
+By looking at what species occupy the functional trait space left vacant in observed communities compared to randomised null communites we can begin to see how the change in the structure of functional trait space --- Could we have basically just done this with species identities?? The whole point is to get beyond this point just considering traits, although this could then be like these could be candidate species for re-introductions as they occupy niche space that is currently not being filled. 
+
+Additionally, we can have a look better at which areas of traits space are favoured or lost across a land use gradient by looking at the differences between the hypervolumes of each last use type and identifying areas that drop in and out of occupancy.
+
+```{r species in the holes, fig.width=10}
+
+## First load in Foraging guild and species pools data 
+
+
+## if holey species list identifying which species occupy holes left compared to random across realms and LU types load it otherwise...
+
+
+
+
+pool_sp <- function(df,sites, pool){
+  
+  pool_species <- c()
+    for(sit in sites){
+      pool_species <- unique(c(pool_species,species_pools[[sit]][["0.9"]]))
+    }
+  
+    for(i in 1:nrow(df)){
+        sp <- unlist(strsplit(df[i,"occupying_species"],split = "/"))
+        df[i,"occupying_species"] <- paste(sp[which(sp %in% pool_species)], collapse = "/")
+    }
+  
+  return(df)
+  
+}
+
+split_sp_func <- function(df){
+  species <- c()
+  for(i in 1:nrow(df)){
+  species <- unique(c(species,unlist(strsplit(df[i,"occupying_species"], split = "/"))))
+  }
+  return(species)
+}
+
+
+################################################
+#################################################
+
+if(any(grepl(x = list.files("../Outputs"), pattern = "holey_species"))){
+  holey_species <- readRDS(grep(list.files("../Outputs", full.names = TRUE), value = TRUE, pattern = "holey_species"))
+} else {
+  
+# create empty list   
+  
+holey_species <- list()
+
+#iterate through realms
+
+for(r in realms){
+  
+  ## get the land uses 
+  
+  land_uses <- realm_land_uses[[r]]
+  
+  # iterate through land uses 
+  
+  for(LU in land_uses){
+  
+  ## get sites 
+    
+  lu_sites <- TPD_LU %>% dplyr::filter(Predominant_habitat == LU, Realm == r) %>% dplyr::distinct(SSBS) %>% pull()
+  
+  ## identify where holes are compared to random
+  
+  holes <- TPD_holes(data = PREDICTS_tpds, randata = PREDICTS_randomisations, sites = lu_sites[1], threshold = 0.95)
+  
+  ## determine which species fit in these holes based on their functional traits 
+  
+  internal_species <- species_fit(holes[["internal"]][["internal_hole_cells"]])
+  
+  ## This produces a data frame
+  
+  
+  
+  ##### now this is all the species that are in the entirety of the assembly species pool so now I'm going to filter just for those species that are in the species pools of all the sites combined.
+ 
+  internal_species <- pool_sp(internal_species)
+  
+  
+   holey_species[paste(r,LU,sep = "_")] <- internal_species
+  }
+}
+
+write_rds(holey_species, file = "Outputs/holey_species.rds")
+
+}
+
+
+
+
+
+
+
+
+
+hole_plot_sp <- c()
+
+for( r in realms){
+
+  land_uses <- realm_land_uses[[r]]
+  
+for(LU in land_uses){
+
+  data <- holey_species[[paste(r,LU,sep = "_")]]
+  
+r_lu_hole_sp <- split_sp_func(data)
+
+
+
+hole_sp_for <- data.frame(Birdlife_Name = r_lu_hole_sp, Land_use = LU, Realm = r) %>% dplyr::left_join(Forage[,c("Birdlife_Name", "Trophic_Level", "Trophic_Niche", "Foraging_Niche")], by = "Birdlife_Name")
+
+hole_sp_for$Trophic_Niche <- factor(hole_sp_for$Trophic_Niche)
+
+
+hole_plot_sp <- rbind(hole_plot_sp,hole_sp_for)
+
+}
+}
+
+hole_plot_sp$Land_use <- factor(hole_plot_sp$Land_use,
+                                levels = c("Primary forest", "Primary non-forest", "Secondary vegetation", "Plantation forest",
+                                           "Pasture", "Cropland", "Urban"))
+hole_plot_sp$Trophic_Niche <- factor(hole_plot_sp$Trophic_Niche, levels = c("In", "Fr","Gr", "Ne", "Hb.T", "Hb.A", "Vt", "Aq.p","Om" ))
+
+hole_plot_sp <- hole_plot_sp %>% dplyr::mutate(Foraging_Niche = ifelse(Foraging_Niche == "For.Gen", "For.Gen","Spec"))
+
+
+
+
+for(r in unique(realms)){
+
+  ### Or could weight it by the size of the hole?? But I've gone for size of the observed communitity and this point but hole size may be better 
+  
+  weights <- holes_frame%>% dplyr::filter(Realm == r)
+  
+  data <- hole_plot_sp %>% dplyr::filter(Realm == r) %>% group_by(Trophic_Niche, Foraging_Niche, Land_use) %>% dplyr::summarise(count = n(), .groups = "drop") %>% dplyr::left_join(weights[,c("Land_use", "total_hole_volume_int")], by = "Land_use") %>% dplyr::mutate(relative_sp_occupancy = count/total_hole_volume_int)
+    
+
+hole_sp_plot <- ggplot(data = data, aes( x = Land_use, y = relative_sp_occupancy, fill = Foraging_Niche)) +
+  geom_bar(stat = "identity") +
+  facet_grid(. ~Trophic_Niche) +
+  ggtitle(paste(r,sep = "_")) +
+  theme(axis.text.x = element_text(angle = 90))
+
+plot(hole_sp_plot)
+}
+###################################################
+###################################################
+ ## Let's now look at individual site holeyness
+```
+
+
+```{r}
+require(future)
+require(future.apply)
+require(car)
+require(lmerTest)
+require(merTools)
+
+
+if(any(grepl(list.files("../Outputs"), pattern = "site_holes.rds"))){
+  site_hole <- readRDS(grep(list.files("../Outputs",full.names = TRUE),pattern = "site_holes.rds", value = TRUE))
+} else{
+
+registerDoParallel(cores = 8)
+
+all_sites <- TPD_LU$SSBS
+
+
+site_holes <- foreach(site = all_sites,
+                      .combine = "rbind",
+                      .packages = c("tidyverse","fastcluster","geometry","magrittr","gstat" ),
+                      .inorder = FALSE) %dopar% {
+
+                      data <- TPD_LU %>% dplyr::filter(SSBS == site)  
+                      
+                      site_hole <- TPD_holes(data = PREDICTS_tpds, randata = PREDICTS_randomisations, sites = site, threshold = 1)
+
+                      if(is_empty(site_hole)){
+                        data$internal_hole_vol <- NA
+                        data$internal_hole_prop <- NA
+                        
+                        data$external_hole_vol <- NA
+                        data$external_hole_prop <- NA
+                          
+                      }else{
+                      
+                      data$internal_hole_vol <- site_hole$internal$total_hole_volume
+                      data$internal_hole_prop <- site_hole$internal$proportion_holes_volume
+                      
+                      data$external_hole_vol <- site_hole$external$total_hole_volume
+                      data$external_hole_prop <- site_hole$external$proportion_holes_volume
+                      
+                      }
+                      return(data)
+
+}
+
+registerDoSEQ()
+closeAllConnections()
+
+
+site_hole <- readRDS("Outputs/site_holes.rds")
+}
+
+
+site_hole$Predominant_habitat <- relevel(factor(site_hole$Predominant_habitat), ref = "Primary vegetation")
+site_hole$Realm <- relevel(factor(site_hole$Realm), ref = "Neotropic")
+
+
+
+
+
+site_hole <- site_hole %>% dplyr::left_join(PREDICTS[,c("SSBS", "SS")], by = "SSBS") %>% distinct(SSBS, .keep_all = TRUE)
+
+FD_mets <- TPD_FD_metrics(data = PREDICTS_randomisations_site_ranges, sites = site_hole$SSBS)
+
+site_hole$F_Rich <- FD_mets$FRich
+hist(site_hole$F_Rich)
+hist(log(site_hole$F_Rich))
+
+hist(site_hole$internal_hole_prop)
+hist(sqrt(site_hole$internal_hole_prop))
+hist(car::logit(site_hole$internal_hole_prop))
+
+     
+     
+
+site_mod <- lmer(sqrt(internal_hole_prop) ~ Predominant_habitat + Realm + Predominant_habitat:Realm + (1|SS), data = site_hole)
+
+
+
+summary(site_mod)
+Anova(site_mod, type = "II")
+
+ggResidpanel::resid_panel(site_mod)
+
+
+
+
+newdata <- data.frame(Realm = c(rep(names(realm_land_uses)[1], length(realm_land_uses[[1]])),
+                                 rep(names(realm_land_uses)[2], length(realm_land_uses[[2]])),
+                                 rep(names(realm_land_uses)[3], length(realm_land_uses[[3]])),
+                                 rep(names(realm_land_uses)[4], length(realm_land_uses[[4]])),
+                                 rep(names(realm_land_uses)[5], length(realm_land_uses[[5]])),
+                                 rep(names(realm_land_uses)[6], length(realm_land_uses[[6]]))),
+                       Predominant_habitat = c(realm_land_uses[[1]],
+                                    realm_land_uses[[2]],
+                                    realm_land_uses[[3]],
+                                    realm_land_uses[[4]],
+                                    realm_land_uses[[5]],
+                                    realm_land_uses[[6]]))
+
+
+
+#for(i in 1:nrow(lala)){
+#  ph <- lala[i,"Predominant_habitat"]
+#  r <- lala[i,"Realm"]
+#lala[i,"logF_Rich"] <- log(mean(site_hole[which(site_hole$Predominant_habitat == ph & site_hole$Realm == r),"F_Rich"]))
+#}
+
+
+
+pred_fun <- function(x){
+  as.numeric(predict(x, newdata = newdata, re.form = NA))
+}
+
+newdata$predicted <- pred_fun(site_mod)^2
+newdata$upper <- NA
+newdata$lower <- NA
+
+
+booted_mod <- bootMer(site_mod, FUN = function(x) pred_fun(x), nsim = 1000)
+
+estimates <- booted_mod$t0^2
+
+bootstraps <- booted_mod$t^2
+
+for(i in 1:ncol(bootstraps)){
+  newdata[i,"upper"] <- as.numeric(quantile(bootstraps[,i], 0.95))
+  newdata[i,"lower"] <- as.numeric(quantile(bootstraps[,i], 0.05))
+
+  }
+
+###############################
+###############################
+# Now the plot
+
+newdata$Predominant_habitat <- factor(newdata$Predominant_habitat, levels = c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+
+levels(newdata$Predominant_habitat) <- c("PriVeg","SecVeg","PlnFor","Pas","Crp","Urb")
+
+
+for(r in unique(realms)){
+
+  p_d <- newdata %>% dplyr::filter(Realm == r)
+  
+  pri_intercept <- p_d %>% dplyr::filter(Predominant_habitat == "PriVeg") %>% pull(predicted)
+
+  
+  pd <- position_dodge(0.5)
+plot <- ggplot(data = p_d, aes(x = Predominant_habitat, y = predicted, colour = Predominant_habitat)) +
+  geom_errorbar(aes(ymin=ifelse(lower< 0, 0, lower) , ymax= upper), colour="black", width=.1, position=pd, linetype = 1) +
+  geom_point(position=pd,size=6)+
+  xlab("Land use") +
+  ylab("Holeyness") +
+  scale_colour_hue(name="Use intensity",    # Legend label, use darker colors
+                   breaks=c("Minimal", "Light","Intense","All"),
+                   labels=c("Minimal", "Light","Intense","All"),
+                   l=40) +                    # Use darker colors, lightness=40+
+  expand_limits(y=0) +
+  ggtitle(paste(r))+
+  theme_classic() +
+  geom_hline(yintercept= pri_intercept, linetype='dotted', col = 'red')+
+  theme(legend.justification=c(1,0),
+        legend.position=c(1,0.65),
+        text = element_text(size = 20))+
+  theme(axis.text.x = element_text(angle = 90))
+
+plot(plot)
+}
+```
+
+
+These plots at the site level do not show any clear pattern for an increase in the holeyness of functional trait space of communities in land uses of increasing human impact from primary forest to urban across biogeographic realms. This is a shame and can't really be explained especially the fact that urban sites have smaller holes compared to sites in primary forest and other land uses of less human impact. A possible explanation could be that there is functional homogenization in urban sites meaning that functional divergence and richness is reduced leading to the pattern of small holes in urban sites. 
+
+I'm going to possibly look into the roundness of functional trait space to indicate whether there is a significant change in the shape trait space that can reveal just how land use influences the shape and structure of trait space.

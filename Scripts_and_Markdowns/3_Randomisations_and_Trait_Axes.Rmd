@@ -1,0 +1,598 @@
+---
+title: "Null_community_randomisations"
+author: "Patrick Alexander Walkden"
+date: "25/11/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Null community randomisations from the regional species pool 
+
+Now that we have defined the regional species pool from the previous markdown it now comes to generating the null communities by which we will compare our observed communites to see whether they generating patterns diverting from random and be indicative of patterns of community assembly. 
+
+To conduct these randomisations I am going to be swapping the species identities in each site with those selected from the regional species pool, without replacement. As not all species within the species pool are not going to be as likely to colonise the focal site as each other I am including a couple of biological constraints that weights the species probability from being drawn from the pool. 
+
+1) Dispersal probabilty <- this was generate in the previous markdown combining distance to range edge and hand-wing index (a metric used as a proxy from dispersal potential) - this generate metric is scaled between 0 and 1 so can be a proxy of probability of dispersal.
+
+2) environmental affintiy <- generate (HOPEFULLY SOON) from SDMs that has an output for probability of presence of a species in a grid cell contingent on the environmental conditions at those locations. 
+
+The products of these two factors are going to weight the species selection from the species pool.
+
+```{r load in packages and data }
+
+rm(list = ls())
+
+require(tidyverse)
+
+
+PREDICTS <- readRDS("../Outputs/refined_predicts.rds") 
+species_pool <- readRDS("../Outputs/predicts_sites_species_pools.rds")
+dispersal_prob <- readRDS("../Outputs/sp_dispersal_probabilities.rds")
+environmental_prob <- readRDS("../Outputs/sp_environmental_probabilities.rds")
+drop_spp <- readRDS("../Outputs/assembly_drop_spp.rds")
+
+
+```
+
+## Preparing data
+
+
+
+```{r data prep}
+
+# get PREDICTS and drop the species that are not to be included in the analysis.
+
+prep_data <- PREDICTS %>% dplyr::filter(!(Birdlife_Name %in% drop_spp)) %>%  
+  
+  #### group by Site and Species get abundance if there are some sites that the same species is recorded multiple times 
+  dplyr::group_by(SSBS,Birdlife_Name) %>% dplyr::mutate(SpeciesSiteAbundance = sum(Effort_Corrected_Measurement), n_spp = n()) %>%
+  
+  # filter those species
+  filter(!duplicated(n_spp) | n_spp == 1) %>%
+  
+  ## ungroup and drop levels
+  ungroup() %>%   droplevels() %>%  
+  
+  ## just group by site --- get total site abundance -- the nummber of distinct species 
+  group_by(SSBS) %>% dplyr::mutate(TotalSiteAbundance = sum(SpeciesSiteAbundance), site_spp = n_distinct(Birdlife_Name)) %>% ungroup () %>%
+  
+  ### if the site only have a single species -- GET RID OF IT
+  
+  dplyr::filter(site_spp > 1) %>%
+  
+  ### relative abundance of each species at each site SpeciesSitelevel abundance/TotalSite abundance
+  dplyr::mutate(RelativeAbundance = SpeciesSiteAbundance/TotalSiteAbundance) %>%
+  
+  droplevels()
+
+```
+
+###  Randomisation function
+
+This function creates a list for each community with 1000 new null communities. 
+
+```{r randomisation function}
+
+## for a given site and species pool - remember there are multilpe different pool
+
+randomisation_func <- function(site,pool){
+  
+  ## filter the prepared data by site and select just the Relative abundance and Birdlife names 
+  
+  data <- prep_data %>% dplyr::filter(SSBS == site) %>% dplyr::select(RelativeAbundance, Birdlife_Name)
+  
+  
+  ### get the species pool related to that site and threshold
+  
+  sp_pool <- species_pool[[site]][[pool]]
+  
+  ## get the dispersal and environmental probailities of all the species in the sites species pool to the focal site
+  
+  dis_p <- dispersal_prob[site,sp_pool]
+  environ_p <- environmental_prob[site,sp_pool]
+  
+  
+  ## relate the product of the probabilities to their species name
+  
+  random_probs <- data.frame(Birdlife_Name = names(dis_p), prob = dis_p*environ_p)
+  
+  ## i am creating 1000 null communities by swapping the speices identity ( and therefore their associated traits) while maintaining site 
+  ## species richness. This is because to identify a pattern from null communities yiu should only randomise the aspect of interest
+  ## and in our case that is FD so we randomise traits.
+  
+  
+  for(i in 1:1000){
+    
+    #### randomisation loop - sample the species in the species pool **WITHOUT REPLACEMENT** and weight the probability of those species getting selected -- the size of our community remains the same and the realtive abundances of the community also remains constant
+    
+    randomisation <- data.frame(randomised_spp = sample(random_probs$Birdlife_Name, replace = FALSE, prob = random_probs$prob, size = nrow(data)))
+    
+    ### name the random community 
+    colnames(randomisation) <- paste(site,"random", paste(i), sep = "_")
+    
+    ## bind it
+    data <- cbind(data,randomisation)
+  }
+  
+  return(data)
+}
+
+```
+
+### Run the function
+
+Because there so many communities I am going to run this function in parallel using the future package.
+
+
+
+```{r run the function in parallel}
+
+require(future)
+require(future.apply)
+
+## assign the number of core we want to include
+
+plan(multicore(workers = 8))
+
+## get sites 
+
+predicts_sites <- as.character(unique(prep_data$SSBS))
+
+# make into list  
+pred_sites <- lapply(predicts_sites,paste)
+names(pred_sites) <- predicts_sites
+
+## change memory limits
+options(future.globals.maxSize = 1000 * 1024^2)
+
+## run randomisations
+
+randomisations <- future_lapply(pred_sites[1:8],randomisation_func, pool = "0.9", future.seed = TRUE,future.label = TRUE)
+
+## close all connections
+
+closeAllConnections()
+
+# save
+
+write_rds(x = randomisations, file = "Outputs/site_randomisations.rds")
+
+```
+
+
+# Next up: getting our trait axes!
+
+We want to generate the trait axes used in our trait probability density functions TPDs and Rao's Q calculations (maybe). We are going to be using the AVONET database which is the most comprehensive collation of continuous morphological traits at the level of individual specimens - unprecendented for any other clade of vertebrates. Accounting for the intraspecific variation that AVONET facilitates I am able to use TPD to define a probabalistic hypervolume in multidimensional trait space.
+
+This entails performing the two step PCA again but with all traits considered for the generation of the morphological trait space. For the generation of the axes for Dietary trait space, unfortunately there, is no data available for the differences between individuals diet at the species level so foraging scores are used and variation within species is estimated using plug-in bandwidth estimators in the ks package.
+
+First up lets load in some of the relevant packages and data we'll need
+
+```{r packages and data}
+
+rm(list = ls())
+
+
+
+require(tidyverse) # data manipulation
+require(magrittr) # pipiing
+require(vegan) ## ordination
+require(TPD) ## TPD checking
+require(ks) # bandwidth estimation
+require(ggbiplot)
+
+AVONET_full <- read.csv("../../../Datasets/GBD/GBD_BiometricsRaw_combined_11_Aug_2021_MASTER.csv")
+species_pools <- read_rds("../Outputs/predicts_sites_species_pools.rds")
+```
+
+
+## Morphological trait axes 
+
+
+```{r data prep}
+
+### get all the species that are in the species pools
+
+assembly_species <- unique(c(unlist(unlist(species_pools)))) 
+
+
+### Join all the morpho traits 
+
+## get AVONETFULL data with trait data at the individual level and filter just those species that occur in the assembly pool, thus excluding all the drop spp implicitly 
+
+assem_traits <- AVONET_full %>% dplyr::filter(Species1_BirdLife %in% assembly_species) %>%
+  
+  ### Select the 8 morphological traits that go into the two-step PCA
+  
+  dplyr::select(Species1_BirdLife,Beak.Length_Culmen,Beak.Length_Nares,Beak.Width,Beak.Depth,Tarsus.Length,Wing.Length,
+                Kipps.Distance,Secondary1,Hand.wing.Index,Tail.Length)  %>% data.frame()
+
+#### there are going to be some rows that we have to drop if all the trait scores are NA, usually this will be done with something like NA omit but this will also exclude those specimens that only have a single NA for a trait score and therefore will also have trait data that can contribute to other traut values.
+
+drop_rows <- c()
+for(i in 1:nrow(assem_traits)){
+  if(all(is.na(assem_traits[i,c(2:10)]))){
+  drop_rows <- c(drop_rows,i)  
+  }
+}
+
+### With the assembly trait data frame drop those rows
+
+assem_traits <- assem_traits %>% slice(-drop_rows)
+
+
+##################################
+##################################
+## So for those traits that are missing just a single trait value I mm going to impute the trait value as mean value of the other specimens that do have a score.
+
+
+## itterate through all of the traits 
+for(trait in colnames(assem_traits)[2:11]){
+  
+  ##### select just the species and trait coluns 
+  data <- assem_traits %>% dplyr::select(Species1_BirdLife,all_of(trait))
+  
+  ## what are the unique species which have an na associated with the traits
+  
+  sp <- unique(data[which(is.na(data[,trait])),"Species1_BirdLife"])
+
+  ## itterate through each species that has an NA
+  for(s in sp){
+    
+    
+    ### get the mean value of the species and trait, while removing the NAs
+    mean <- mean(assem_traits[which(assem_traits[,"Species1_BirdLife"] == s),trait], na.rm = TRUE)
+    ## and if there were NAs then replace the score with NA
+    assem_traits[which(assem_traits[,"Species1_BirdLife"] == s & is.na(assem_traits[,trait])),trait] <- mean
+  }
+  
+}
+
+```
+
+Now we've imputed those missing traits - I don't know whether this is the best way to do it but we have it here. Or even whether this is feasible. 
+
+1 - So now proceeding there are a few different procedures depending on the number of species that have complete cases of traits - If they have 4 or more then they can proceed into the TPD process without further processing.
+
+2 - if the species has fewer than 4 specimens but greater than one then the trait data can still be used to create TPDs but based on means and a given standard deviation for these the given standard deviation is the sd of the trait values measured.
+
+3 - if the species has only a single specimen then the mean is used and the given standard deviation is determined by an plug-in bandwidth predictor 
+
+oh and then a fourth category getting our pseudospp
+
+so let's see how many species fall into each of these categories.
+
+```{r species partitioning}
+
+## in the df with the imputed scores now remove those species still with any NAs in them
+
+assem_traits <- assem_traits %>% na.omit() %>% 
+  
+  ## group by species and work out how many specimens there are of each 
+  
+  group_by(Species1_BirdLife) %>% dplyr::mutate(num = n()) %>% ungroup()
+
+
+
+## how many species have greater than or equal to four specimens
+
+enough_sp <- assem_traits %>% filter(num >= 4) %>% distinct(Species1_BirdLife) %>% pull()
+
+e_sp_frame <- assem_traits %>% filter(Species1_BirdLife %in% enough_sp)
+
+## There are 7312 species with enough specimen data
+
+
+
+######### How many species have less than four specimes and greater than one
+
+insuf_sp <- assem_traits %>% filter(num < 4, num > 1) %>% distinct(Species1_BirdLife) %>% pull()
+
+in_sp_frame <- assem_traits %>% filter(Species1_BirdLife %in% insuf_sp)
+
+## There are 210 species with insufficient specimen data 
+
+
+## How many species have just a single specimen 
+
+sing_sp <- assem_traits %>% filter(num == 1) %>% distinct(Species1_BirdLife) %>% pull()
+
+s_sp_frame <- assem_traits %>% filter(Species1_BirdLife %in% sing_sp)
+## 95 species in this category 
+
+####################################################################################################
+####################################################################################################
+####################################################################################################
+# How many species then that are in our assembly species do not have trait data associated with them 
+
+no_sp <- assembly_species[!(assembly_species %in% c(enough_sp,insuf_sp,sing_sp))]
+
+## there are 262 species in our assembly species pool with nay traits so with those we get the imputed data that we generated for the mean value trait scores to join them in. 
+
+## df with no specimen and single specimen species
+
+mean_no_sp <- data.frame(Birdlife_Name = c(sing_sp,no_sp)) 
+
+
+## load in imputed BL traits 
+
+mean_traits <- readRDS("../../PREDICTS_Taxonomy/PREDICTS_imputed_BL_traits.rds") 
+
+## psuedospp are those that have an underscore in them -- 104 of them!
+
+pseudospp <- mean_traits %>% dplyr::filter(grepl(uniqueIDS, pattern = "_")) %>% dplyr::rename(Birdlife_Name = uniqueIDS)
+
+### get the traits for the mean-no-sp and then rbind the psuedospp data as well adding a maker it indacte they are in the single spp category.
+
+mean_no_sp <- mean_no_sp %>% dplyr::left_join(mean_traits, by = c("Birdlife_Name" = "uniqueIDS")) %>% rbind(pseudospp) %>% dplyr::mutate(num = 1) 
+
+```
+
+## Two-step PCA
+
+now that we have the species all partitioned into categories. we can continue on with our two step PCA.
+
+
+```{r}
+
+## resolve all df colnames
+## 
+
+colnames(e_sp_frame)[1] <- "Birdlife_Name"
+colnames(in_sp_frame)[1] <- "Birdlife_Name"
+colnames(mean_no_sp)[10] <- colnames(e_sp_frame)[10]
+
+## join the frames and na. omit
+## 
+
+PCA_traits <- rbind(e_sp_frame[,c(1:11)],in_sp_frame[,c(1:11)],mean_no_sp[,c(1:11)]) %>% na.omit()
+
+#### scale the trait scores of the specimens so that the traits have an mean on 0 and an sd of 1
+
+PCA_traits[,c(2:11)] <- scale(log(PCA_traits[,c(2:11)]))
+
+#### get the foraging traits so those relating to the beak dimensions
+
+For_Data <- data.frame(PCA_traits[,c("Birdlife_Name", "Beak.Length_Culmen", "Beak.Length_Nares", "Beak.Width", "Beak.Depth")])
+
+## foraging PCA 
+
+for_pca <- prcomp(For_Data[,-1])
+
+## get the output 
+
+for_pca
+
+## how much variation does each axis account for
+summary(for_pca)
+
+ggbiplot(for_pca)
+#######################################
+
+Loco_Data <- data.frame(PCA_traits[,c("Birdlife_Name", "Tarsus.Length","Wing.Length","Secondary1","Tail.Length")])
+
+loco_pca <- prcomp(Loco_Data[,-1])
+
+loco_pca
+summary(loco_pca)
+
+ggbiplot(loco_pca)
+
+############################### taking the first two axes of the two previous PCAs which represent a measure of body size, due to string correlation with all traits 
+
+Body_Data <- data.frame(forage = for_pca$x[,1],loco = loco_pca$x[,1])
+
+body_pca <- prcomp(Body_Data)
+
+body_pca
+summary(body_pca)
+
+ggbiplot(body_pca)
+
+###################################################
+
+## Join all into a table
+
+Full_PCA_Score <- data.frame(Birdlife_Name = PCA_traits$Birdlife_Name, locomotion = loco_pca$x[,2],
+                             foraging = for_pca$x[,2],
+                             body = body_pca$x[,1])
+
+
+###########################################
+
+```
+
+##### 
+Now we need to run some checks with the traits and TPD package as occasionally the output will generate an out consisting entirely of NaNs. Altering the traits ranges and number of divisions can resolve the problem - However, when I tried to resolve all species it wasn't possible so to save computational power and for simplicity those species that are unable to create TPDs at the default (50 divisions) and traits ranges of 15% buffer they are passed onto the TPDsMean function with the species that have insufficient specimens and the bandwidth of the now multivariate normal distirbution is the determinded in a couple of ways 
+
+i) if there are greater than specimen the bandwidth is the sd 
+
+ii) otherwise bandwidth is estimated using the plug-in bandwidth estimator based on all the specimens
+
+Also this occasionally happens when calculating meanTPDs but... wel'll walk through it. 
+
+So first a couple of TPD specific functions that will facilitate calculations
+
+```{r TPD}
+###########################################
+
+trait_range_calc <- function(range = 0.15, traits){
+  
+  n_range_2 <- dist(c(min(traits[,2]),max(traits[,2])))[1]
+  n_range_3 <- dist(c(min(traits[,3]),max(traits[,3])))[1]
+  n_range_4 <- dist(c(min(traits[,4]),max(traits[,4])))[1]
+  
+  trait_ranges <- list(c(min(traits[,2]) -(range * n_range_2),max(traits[,2]) + (range * n_range_2)),
+                       c(min(traits[,3]) -(range * n_range_3),max(traits[,3]) + (range * n_range_3)),
+                       c(min(traits[,4]) -(range * n_range_4),max(traits[,4]) + (range * n_range_4)))
+  return(trait_ranges)
+}
+
+
+###################### Function to find out which species a TPD couldn't be calculated for with the range and division combination given
+
+TPD_fucked <- function(TPD){
+
+  Trait_density <- TPD
+  
+  fucked_species <- c()
+  for(i in 1:length(Trait_density$TPDs)){
+    if(any(is.nan(Trait_density$TPDs[[i]]))){
+      fucked_species <- c(fucked_species,names(Trait_density$TPDs)[[i]]) 
+    }
+  }
+ return(fucked_species)
+}
+
+
+################################################################
+################################################################
+################################################################
+
+## get the traits scores for all the species that a TPD for the species can be calculated 
+
+e_pca <- Full_PCA_Score %>% dplyr::filter(Birdlife_Name %in% enough_sp) %>% na.omit()
+
+
+## get the trait ranges for the pca values with a buffer of 15% either side
+
+trait_ranges <- trait_range_calc(range = 0.025, traits = e_pca)
+
+Trait_density <- TPDs(e_pca[,1], e_pca[,c(2:4)], trait_ranges = trait_ranges, alpha = 0.95)
+
+### how many species seemingly with enough specimens can we not create TPDs for
+
+f_sp <- TPD_fucked(TPD = Trait_density)  #### 8 
+
+#####################################################
+#####################################################
+### filter out the pca scores for those species that TPDs can be calculated for so that they can be stored later. 
+
+complete_pca <- e_pca %>% dplyr::filter(!(Birdlife_Name %in% f_sp))
+
+
+###remove TPD as it takes up loads of memory 
+
+rm(Trait_density)
+
+
+
+#####################################################
+#####################################################
+###### MEAN TPDs with bandwidth based on species sds
+
+# 1) if there are more than one specimens than the bandwidth is the SD of the available trait values calculate sd of avialable specimens
+
+p_traits <- Full_PCA_Score %>% dplyr::filter(Birdlife_Name %in% c(f_sp,insuf_sp)) %>% dplyr::group_by(Birdlife_Name) %>% 
+  dplyr::summarise(loco_mean = mean(locomotion), loco_sd = sd(locomotion),
+                   for_mean = mean(foraging), for_sd = sd(foraging),
+                   body_mean = mean(body), body_sd = sd(body)) %>% data.frame()
+
+
+### however also need to check here whether any of the mean calculations with the informed SDs throw up a problem as well so....
+
+mean_trait_density <- TPDsMean(species = p_traits[,1], 
+                               means = p_traits[,c(2,4,6)],
+                               sds = p_traits[,c(3,5,7)], trait_ranges = trait_ranges, alpha = 0.95)
+
+## check whether any mean TPDs come out with NaNs
+
+m_f_sp <- TPD_fucked(mean_trait_density) ## only two species 
+
+p_traits <- p_traits %>% dplyr::filter(!(Birdlife_Name %in% m_f_sp)) ## so filter out those two species
+
+
+
+## 2) If there is only a single specimen then the bandwidth used to calculate the multivariate normal distribution is calculated using a plug in bandwidth estimator from the ks package and is sqrted (for reasons? this was done in Carmonas paper)
+
+
+## calculate the estimator for all species 
+mean_trait_sds <- sqrt(diag(Hpi.diag(Full_PCA_Score[,c(2:4)])))
+
+## join together species that rely on means already and those species who cannot be calculated with the meanTPD function and their own sds.
+
+s_traits <- Full_PCA_Score %>% dplyr::filter(Birdlife_Name %in% c(mean_no_sp$Birdlife_Name, m_f_sp)) %>% dplyr::group_by(Birdlife_Name) %>% 
+  dplyr::summarise(loco_mean = mean(locomotion), loco_sd = mean_trait_sds[1],
+                   for_mean = mean(foraging), for_sd =  mean_trait_sds[2],
+                   body_mean = mean(body), body_sd = mean_trait_sds[3]) %>% data.frame()
+
+### 462 species traits that can TPDs are to be calculated by meanTPD and plug in estimators.
+
+
+full_mean <- Full_PCA_Score %>% dplyr::filter(!(Birdlife_Name %in% mean_no_sp$Birdlife_Name)) %>% dplyr::group_by(Birdlife_Name) %>% 
+  dplyr::summarise(loco_mean = mean(locomotion), loco_sd = sd(locomotion),
+                   for_mean = mean(foraging), for_sd =  sd(foraging),
+                   body_mean = mean(body), body_sd = sd(body)) %>% data.frame()
+
+```
+
+
+Collate all the traits together to be in a workable format for the computation of TPDs
+
+```{r collate traits together}
+
+f_traits <- list()
+
+f_traits$complete_traits <- complete_pca
+f_traits$partial_traits <- p_traits
+f_traits$single_traits <- s_traits
+f_traits$full_mean_traits <- full_mean
+```
+
+As a sort of sensitivity analysis I'm also going to include in the trait list traits whereby every species TPD is caluclated using meanTPDs and a multivariate normal distribution with a plug in bandwidth estimator.
+
+```{r bandwidth traits}
+################################################
+###############################################
+## ALSO GOING TO ADD ANOTHER LIST FOR ALL SPECIES BANDWIDTHS BEING DETERMINDED BY THE PLUGIN BAND WIDTH
+
+
+f_s_traits <-  Full_PCA_Score %>% dplyr::group_by(Birdlife_Name) %>% 
+  dplyr::summarise(loco_mean = mean(locomotion), loco_sd = mean_trait_sds[1],
+                   for_mean = mean(foraging), for_sd =  mean_trait_sds[2],
+                   body_mean = mean(body), body_sd = mean_trait_sds[3]) %>% data.frame()
+
+
+f_traits$full_bandwidth_traits <- f_s_traits
+
+
+## SAVE
+
+######## write the list for later use 
+
+write_rds(file = "../Outputs/full_morpho_traits_list.rds", x = f_traits)
+
+```
+
+# Foraging Traits
+
+This is much easier as there are no intraspecific measures of the proportion of each species diets therefore TPDs defining the foraging niche in multidimensional trait space will all be meanTPDs based on a plug in estimator
+
+```{r foraging TPDs traits}
+###############################################################################################
+##### FORAGING TRAITS #####################
+############################
+
+## load in trait scores function that conducts two-step PCA for traits based on means
+
+source("Functions/trait_scores.R")
+
+## get the mean traits
+
+Forage <- readRDS("../PREDICTS_Taxonomy/PREDICTS_imputed_BL_traits_forage.rds")
+
+### add all the assembly species and the psuedospps and join the traits
+
+For_assembly_traits <- data.frame(Birdlife_Name = c(assembly_species,pseudospp$Birdlife_Name)) %>% dplyr::left_join(Forage)
+
+## perform two-step PCA
+
+predicts_for_traits <- trait_scores(data = For_assembly_traits, traits = "foraging")
+
+write_rds(predicts_for_traits, file = "Outputs/predicts_foraging_pcoa.rds")
+
+
+```

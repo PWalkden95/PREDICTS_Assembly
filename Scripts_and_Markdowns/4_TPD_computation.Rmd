@@ -1,0 +1,538 @@
+---
+title: "TPD_computation"
+author: "Patrick Alexander Walkden"
+date: "29/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## TPD computations
+
+This markdown is going to walkthrough the computation of Trait Probability Density fucntions (TPDs) for each of the observed predicts communities in addition to calculating the mean TPD from the 1000 null communities generated previously. 
+
+First things first... let's load in the relevant data and packages
+
+```{r package and data loading}
+rm(list = ls())
+
+require(tidyverse)
+require(TPD)
+require(magrittr)
+require(doParallel)
+
+PREDICTS <- readRDS("../Outputs/refined_predicts.rds") ### the cleaned PREDICTS data
+TPD_traits <- readRDS("../Outputs/full_morpho_traits_list.rds") ### The traits list for each species in the observed and null communities
+drop_spp <- readRDS("../Outputs/assembly_drop_spp.rds") ## Those species that need to be dropped
+for_traits <- readRDS("../Outputs/predicts_foraging_pcoa.rds") ### trait scores for the dietary guilds 
+randomisations <- readRDS("../Outputs/site_randomisations.rds") ## The randomised communites
+
+```
+
+## Observed Communities 
+
+PREDCITS needs a little cleaning before you can calculate TPDs we need to calculate each species relative abundance at each site. 
+
+```{r pressure, echo=FALSE}
+################### format PREDICTS data for TPD calculations
+
+## filter out any species that need to be dropped 
+
+TPD_data <- data.frame(PREDICTS) %>% filter(!(Birdlife_Name %in% drop_spp)) %>% 
+  
+  ## group by site and birdlife name a occasionally the sme species pops up in the same site twice.
+  
+  dplyr::group_by(SSBS,Birdlife_Name) %>% dplyr::mutate(SpeciesSiteAbundance = sum(Effort_Corrected_Measurement), n_spp = n()) %>%
+  
+  ## filter that that species isn't duplicated and then ungroup 
+  
+  filter(!duplicated(n_spp)| n_spp == 1) %>% ungroup() %>%
+  
+  #### group by site and calculate metrics of how many species are in each site and the total site abundance
+  
+  group_by(SSBS) %>% dplyr::mutate(Site_spp = n_distinct(Birdlife_Name),TotalSiteAbundance = sum(SpeciesSiteAbundance)) %>%
+  
+  ungroup() %>% filter(Site_spp > 1) %>%
+  
+  #### calculate Relative abundance by dividing speices site abundance by total site abundance
+  
+  dplyr::mutate(RelativeAbundance = SpeciesSiteAbundance/TotalSiteAbundance) %>%
+  
+## droplevels
+  droplevels() %>%
+  
+  #as data frame
+  data.frame()
+```
+
+## Trait Probability Density (TPDs)
+
+There are a couple of other functions that are necessary for the compatability of all the different computations. The first function creates the trait ranges that determine the breadth of the functional trait space upon which the species and communities will be cast onto. Typically this is set around 15% of the trait range added to each side and this can end up creating huge morphospaces to which we projectour communities into and a lot of empty space containing no information so this function allows me to alter this range considering all possible traits that can be included in the analysis so that we have a trait space that contains a greater amount of information and balances computational power.
+
+The other is a function that calculates the trait probability density function of all species within the community whether they are to be calculated taking into account infraspecific variation and therefore calcuting TPDs using kernel density estimation or being calculated with the trait means a given or derived bandwidth. -- GOING BACK TO BANDWIDTH AND CHANGING TO SEE IMPACT MAY BE INTERESTING BUT LONG.
+
+```{r TPD functions}
+
+# This function determines the breadth of the fucntional trait space in the three dimensions - as default the range buffer is 15% so we are dropping the down to 2.5% each side
+
+trait_range_calc <- function(range, traits){
+  
+  ## the total range between max and min
+  
+  n_range_2 <- dist(c(min(traits[,2]),max(traits[,2])))[1]
+  n_range_3 <- dist(c(min(traits[,3]),max(traits[,3])))[1]
+  n_range_4 <- dist(c(min(traits[,4]),max(traits[,4])))[1]
+  
+  ## in a list get 15% and add to each end 
+  
+  trait_ranges <- list(c(min(traits[,2]) -(range * n_range_2),max(traits[,2]) + (range * n_range_2)),
+                       c(min(traits[,3]) -(range * n_range_3),max(traits[,3]) + (range * n_range_3)),
+                       c(min(traits[,4]) -(range * n_range_4),max(traits[,4]) + (range * n_range_4)))
+  return(trait_ranges)
+}
+
+
+trait_ranges_morpho <- trait_range_calc(range = 0.025,traits = TPD_traits$complete_traits)
+trait_ranges_for <- trait_range_calc(range = 0.025, traits = for_traits[["foraging_traits"]][["PCoA_Scores"]])
+
+
+########################################################################################################
+########################################################################################################
+######## SPECIES TPD FUNCTION -- This function calculates and combines TPDs for all species given to it.
+
+## I've added a couple of different methods so selecting bandwidths - whether every species is going to take the plug in estimator (bandwidth) or are going to use information from the specimens to  determine a bandwidth or use kde (sds)
+
+species_TPD <- function(species,method = c("bandwidth","sds"), trait_ranges){
+  
+  ## if sds and therefore using species information
+  
+  if(method == "sds"){
+    
+    
+    mtpd <- FALSE
+    
+    ### are there any species that require mean tpd calculation
+    if(any(species %in% c(TPD_traits$partial_traits$Birdlife_Name,TPD_traits$single_traits$Birdlife_Name))){
+      
+      # YES
+      mtpd <- TRUE
+      
+      ### what species are they
+      Mean_sp <- species[species %in% c(TPD_traits$partial_traits$Birdlife_Name,TPD_traits$single_traits$Birdlife_Name)]
+      
+      
+      ## combine all partial traits into the same df representing means and bandwidths to use filter for the species in the community and convert to df
+      
+      mean_TPD_dat <- rbind(TPD_traits$partial_traits,TPD_traits$single_traits) %>% dplyr::filter(Birdlife_Name %in% Mean_sp) %>% data.frame()
+      
+      
+      ### then calculate mean TPDs
+      
+      mean_TPD <- TPDsMean(species = mean_TPD_dat[,1], means = mean_TPD_dat[,c(2,4,6)], sds = mean_TPD_dat[,c(3,5,7)], trait_ranges = trait_ranges)
+      
+    }
+    
+    ## for those species in the community that have sufficient traits extract their traits
+    
+    comm_traits <- TPD_traits[["complete_traits"]] %>% dplyr::filter(Birdlife_Name %in% species)
+    
+    ## claculate TPD
+    
+    trait_density <- TPDs(species = comm_traits[,1], traits = comm_traits[,c(2:4)], trait_ranges = trait_ranges)
+    
+    ## if there were TPDs calculated using the mean and sd join up the data so that both are represented in the same list
+    
+    if(mtpd){
+      trait_density$data$species <- c(trait_density$data$species,mean_TPD$data$species)
+      trait_density$TPDs <- c(trait_density$TPDs,mean_TPD$TPDs)
+      trait_density$data$traits <- rbind(trait_density$data$traits, mean_TPD$data$means)
+    }
+    
+  }
+  
+  ## if they method was to use the plug in bandwidth estimator and mean for all species including those with sufficient data just filter that trait_df for species in the community can calculate TPD.
+  
+  if(method == "bandwidth"){
+    mean_TPD_dat <- TPD_traits$full_bandwidth_traits %>% dplyr::filter(Birdlife_Name %in% species) %>% data.frame()
+    trait_density <- TPDsMean(species = mean_TPD_dat[,1], means = mean_TPD_dat[,c(2,4,6)], sds = mean_TPD_dat[,c(3,5,7)], trait_ranges = trait_ranges)
+  }
+  
+  
+  
+  return(trait_density)
+}
+
+```
+
+# Every species TPD
+
+So using these functions we can calculate a single TPD for each species within the assembly species pools, this is for future analysis when we want to identify what species occupy a single point in functional trait space. The inital TPDs of all these species take up heaps of memory so I then just stored them all in a dataframe and removed any points in trait space that did not relate to any species. 
+
+```{r species TPD}
+
+#####################################
+# All species
+
+## all the species names that are included in the analysis
+
+all_sp <- unique(unlist(TPD_traits$full_bandwidth_traits$Birdlife_Name))
+
+## calculate TPDs
+
+species_trait_density <- species_TPD(species = all_sp, method = "sds", trait_ranges = trait_ranges_morpho)
+
+## get the cells of the morphological trait space to which each species was projected onto 
+
+eval_grid <- species_trait_density$data$evaluation_grid %>% set_colnames(c("locomotion","foraging","body"))
+
+
+## using 8 cores combine all the species TPDs into a single matrix 
+
+registerDoParallel(cores = 8)
+
+
+sp_trait_density <- foreach(sp = names(species_trait_density$TPDs),
+                            .combine = "cbind",
+                            .inorder = FALSE,
+                            .packages = c("tidyverse")) %dopar%{
+                              
+                              mat <- matrix(species_trait_density[["TPDs"]][[sp]],
+                                            ncol = 1)
+                              
+                              
+                              colnames(mat) <- sp
+                              
+                              
+                              return(mat)
+                              
+                              
+                            }
+
+registerDoSEQ()
+closeAllConnections()
+
+# saves some mem
+rm(species_trait_density)
+
+##combine grid and species occupancy probabilities 
+species_trait_density <- cbind(eval_grid, sp_trait_density)
+
+### then filter out those cells which do no have any occupancy
+species_trait_density <-  species_trait_density[which(rowSums(species_trait_density[,-c(1:3)]) >  0),]
+
+### save
+write_rds(file = "Outputs/species_tpds_morpho.rds", species_trait_density)
+
+```
+
+# PREDICTS sites TPDs
+
+Next up is to calculate the TPD of the observed and surveyed sites in the PREDICTS database, first up is to isolate the community data and then calculate each species individual species TPD and combine them additively and weighting for species abundance to the Community Trait space and standardizing the resulting output so that the communities probability density integrates to zero facilitating future analysis -- this is done using the TPD function TPDc.
+
+
+
+```{r PREDICTS SITES TPDS}
+
+#### create list of community data
+
+PRED_sites <- rep(list(NA),length(unique(TPD_data$SSBS)))
+i <- 1
+for(sit in as.character(unique(TPD_data$SSBS))){
+  comm_dat <- TPD_data %>% dplyr::filter(SSBS == sit) %>% dplyr::select(Birdlife_Name, RelativeAbundance)
+  PRED_sites[[i]] <- comm_dat
+  names(PRED_sites)[i] <- sit
+  i <- i +1
+}
+
+##############
+############## Create a function that get the community data and calculates TPDcomm ditching the data part of each function as it is memomry hogging and I can get the information I need later.
+
+PREDICTS_TPD <- function(site){
+
+
+## the sites species
+comm_sp <- site$Birdlife_Name
+
+## calculate each species TPDs
+trait_density <- species_TPD(comm_sp, method = "sds", trait_ranges = trait_ranges_morpho)
+
+#### get the relative abundance of each species within the community
+comm <- site %>% set_rownames(site$Birdlife_Name) %>% dplyr::select(RelativeAbundance)
+
+### combine into a community TPD
+Comm_tpd <- TPDc(TPDs = trait_density, sampUnit = t(comm))
+
+
+## store
+Comm_tpd$TPDc <- Comm_tpd$TPDc$TPDc
+Comm_tpd$data <- NULL
+
+
+return(Comm_tpd)
+
+}
+
+###################################
+####### MORPHO TRAITS #############
+####### ###########################
+
+
+require(future)
+require(future.apply)
+
+plan(multicore(workers = 8))
+
+
+PREDICTS_tpds <- future_lapply(PRED_sites,PREDICTS_TPD)
+
+### get the evalutaion grid for the needed data 
+eval_grid <- species_TPD(all_sp[1:20], method = "sds", trait_ranges = trait_ranges_morpho)
+
+## add to list for later use in calculating metrics from the TPDS.
+PREDICTS_tpds$data$evaluation_grid <- eval_grid[["data"]][["evaluation_grid"]]
+PREDICTS_tpds$data$cell_volume <- eval_grid[["data"]][["cell_volume"]]
+
+PREDICTS_tpds <- PREDICTS_tpds[c(length(PREDICTS_tpds),1:(length(PREDICTS_tpds)-1))]
+
+
+
+write_rds(file = "Outputs/PREDICTS_sites_tpds.rds", x = PREDICTS_tpds)
+
+###################################
+####### FORAGING TRAITS ###########
+####### ###########################
+
+# Foraging TPDs are of course only going to be using trait means and a pkug in estimator as the foraging data only comes in the form of proportion of diet and there is little intraspecific data 
+
+
+# so estimate band width
+
+sds <- sqrt(diag(Hpi.diag(for_traits[["foraging_traits"]][["PCoA_Scores"]][,c(2:4)])))
+
+
+
+## similar function to calculate foraging TPDS
+
+PREDICTS_TPD_forage <- function(site){
+  
+  comm_sp <- site$Birdlife_Name
+  
+  for_TPD_dat <- for_traits[["foraging_traits"]][["PCoA_Scores"]] %>% dplyr::filter(Birdlife_Name %in% comm_sp)
+    
+  mean_TPD <- TPDsMean(species = for_TPD_dat[,1], means = for_TPD_dat[,c(2:4)], sds = matrix(rep(sds,nrow(site)), ncol = 3, byrow = TRUE),
+                       trait_ranges = trait_ranges_for)
+  
+  comm <- site %>% set_rownames(site$Birdlife_Name) %>% dplyr::select(RelativeAbundance)
+  
+  
+  Comm_tpd <- TPDc(TPDs = mean_TPD, sampUnit = t(comm))
+  
+  Comm_tpd$TPDc <- Comm_tpd$TPDc$TPDc
+  Comm_tpd$data <- NULL
+  
+  return(Comm_tpd)
+  
+}
+
+## given community data calculate each PREDICTS site foraging TPDs.
+
+For_PREDICTS_tpds <- future_lapply(PRED_sites,PREDICTS_TPD_forage)
+
+eval_grid <- TPDsMean(species = for_traits[["foraging_traits"]][["PCoA_Scores"]][1:10,1], 
+                      means = for_traits[["foraging_traits"]][["PCoA_Scores"]][1:10,c(2:4)],
+                      matrix(rep(sds,10), ncol = 3, byrow = TRUE),
+                      trait_ranges = trait_ranges_for)
+
+For_PREDICTS_tpds$data$evaluation_grid <- eval_grid[["data"]][["evaluation_grid"]]
+For_PREDICTS_tpds$data$cell_volume <- eval_grid[["data"]][["cell_volume"]]
+
+For_PREDICTS_tpds <- For_PREDICTS_tpds[c(length(For_PREDICTS_tpds),1:(length(For_PREDICTS_tpds)-1))]
+
+
+write_rds(For_PREDICTS_tpds, file = "Outputs/PREDICTS_sites_for_tpds.rds")
+
+
+
+closeAllConnections()
+
+
+```
+
+
+# Randomised communities TPDs
+
+The TPDs for the observed communities are now calculated and be compared in terms of structure calculating metrics of functional diversity such as functional richness, divergence and evenness and how these differ between sites in different land uses. Additionally, measures of beta-diversity can be calculated between such communities.
+
+However, we would also like to scrutinize these hypervolumes compared to what we may expect these communities to be like by chance characterized by 1000 null communities as calculated in the previous markdown. This can answer a number of questions such as how holey is the functional space of communities across land uses, which can be an indicator of functional integrity and the potential for species invasions. The proportion of occupancy of the community and areas of the observed functional trait spaces associated with different functional guilds (i.e Dietary guilds) can illuminate whether particular body shapes and strategies are favoured in differing land use types.
+
+The workflow to do this is similar to the calculation of the observed sites TPDs just that the species identities and consequently their traits have been swapped 1000 times for each observed community. To calculate a single TPD for each of the randomised communties we'd be running the code forever however as all TPDs are calculated with relative abundances we can just take the mean of each species RA in the randomised and calculate a single TPD representing the mean TPD of all the randomized communities.
+
+```{r randomised communities TPD function}
+
+## which communities which we calculated random sites for had enough data in the observed commuity for a TPD to be calculated
+
+randomisations <- randomisations[which(names(randomisations) %in% names(PREDICTS_TPD))]
+
+
+### function to construct the TPDs from the randomised communities 
+
+TPD_randomisations_func <- function(list, traits, method, trait_ranges){
+  
+  ## get the site name from the list
+  
+  site_name <- substr(colnames(list)[3],1,nchar(colnames(list)[3])-9)
+  
+  ### then get the species identities from all the randomised sites
+  
+  comm_sp <- unique(c(as.matrix(list[,-1])))
+  
+  ## if for morphological traits 
+  
+  if(traits == "morpho"){
+   
+    ## calculate TPDs for each of the species
+    
+  trait_density <- species_TPD(species = comm_sp, method = method, trait_ranges = trait_ranges)
+    
+    
+  } 
+  
+  ## if foraging traits
+  
+  if(traits == "foraging"){
+    
+    ## get the foraging traits means for those species in the randomisations 
+    
+    comm_traits <- for_traits[["foraging_traits"]][["PCoA_Scores"]] %>% dplyr::filter(Birdlife_Name %in% comm_sp)
+  
+    ## calculate the means 
+    
+    trait_density <- TPDsMean(species = comm_traits[,1],
+                              means = comm_traits[,c(2:4)],
+                              sds = matrix(rep(sds,nrow(comm_traits)), ncol = 3, byrow = TRUE),
+                              trait_ranges = trait_ranges,
+                              alpha = 0.99)
+    
+    }
+  
+  ## create a blank matrix filled with zeros representing zero abundance
+  
+  comm_mat <-  matrix(rep(0,length(comm_sp)*1000), nrow = length(comm_sp),ncol = 1000)
+  
+  ## give row and colnames
+  rownames(comm_mat) <- comm_sp
+  colnames(comm_mat) <- colnames(list)[3:1002]
+  
+  ## for each column in the list that represents the randomised communities get their relative abundances that has been kept constant from as the observed communities. 
+  
+  for(i in 3:ncol(list)){
+    species <- list[,i]
+    names(species) <- list$RelativeAbundance
+    for(j in 1:length(species)){
+             comm_mat[species[j],colnames(list)[i]] <- as.numeric(names(species)[j])
+      }
+
+  }
+  
+  ## get the means of all the species relative abundances to represent the mean overall null community
+  comm_mat <- as.matrix(rowSums(comm_mat)/1000)
+  colnames(comm_mat) <- "Randomisation_Comm"
+  
+  ## calculate the community TPD given the relative abundances 
+  
+  ran_com_TPD <- TPDc(trait_density,sampUnit = t(comm_mat))
+  
+  #ran_com_TPD$TPDc$TPDc <- c(ran_com_TPD$TPDc$TPDc,PREDICTS_TPD[[which(names(PREDICTS_TPD) == site_name)]][["TPDc"]])
+
+  #test <- dissim(ran_com_TPD)
+  
+  
+  ## create list and input the TPD proportional occupancy
+
+mean_TPDc_mat <- list()      
+mean_TPDc_mat$TPDc$RelativeAbundance <- as.numeric(ran_com_TPD$TPDc$TPDc$Randomisation_Comm)
+
+
+
+return(mean_TPDc_mat)
+}
+
+```
+
+So that's the function let's calculate the hypervolumes for the randomised communities can get the output in the form that facilitates future analysis. We will do this in parallel to save computational power and we will get data for the evaluation grid defining the functional trait space of the hypervolumes and the cell volume.
+
+```{r random TPD calculation}
+
+##################################
+#### MORPHO TPDS #################
+##################################
+
+
+require(future)
+require(future.apply)
+
+## register 8 cores
+
+plan(multicore(workers = 8))
+
+####morpho list
+
+### apply the function in parallel for each of the sites 
+
+TPD_randomisations_morpho <- future_lapply(randomisations,
+                                           TPD_randomisations_func,
+                                           traits = "morpho",
+                                           trait_ranges = trait_ranges_morpho,
+                                           method = "sds")
+
+## get the evaluation grid defining the functional trait space 
+
+eval_grid <- TPDs(TPD_traits$complete_traits[c(1:14),1], TPD_traits$complete_traits[c(1:14),c(2:4)], trait_ranges = trait_ranges_morpho)
+
+TPD_randomisations_morpho$data$evaluation_grid <- eval_grid[["data"]][["evaluation_grid"]]
+TPD_randomisations_morpho$data$cell_volume <- eval_grid[["data"]][["cell_volume"]]
+
+TPD_randomisations_morpho <- TPD_randomisations_morpho[c(length(TPD_randomisations_morpho),1:(length(TPD_randomisations_morpho)-1))]
+
+
+write_rds(file = "Outputs/randomisations_TPD_morpho.rds", TPD_randomisations_morpho)
+
+
+##################################
+#### FORAGING TPDS ###############
+##################################
+
+
+rm(TPD_randomisations_morpho)
+
+
+
+trait_ranges <- trait_range_calc(range = 0.025, traits = for_traits[["foraging_traits"]][["PCoA_Scores"]])
+sds <- sqrt(diag(Hpi.diag(for_traits[["foraging_traits"]][["PCoA_Scores"]][,c(2:4)])))
+
+
+TPD_randomisations_foraging <- future_lapply(randomisations[1:8],TPD_randomisations_func, traits = "foraging")
+
+eval_grid <- TPDsMean(species = for_traits[["foraging_traits"]][["PCoA_Scores"]][c(1:14),1], 
+                      means = for_traits[["foraging_traits"]][["PCoA_Scores"]][c(1:14),c(2:4)], 
+                      sds = matrix(rep(sds,14), ncol = 3, byrow = TRUE),
+                      trait_ranges = trait_ranges)
+
+TPD_randomisations_foraging$data$evaluation_grid <- eval_grid[["data"]][[c("evaluation_grid","cell_volume")]]
+TPD_randomisations_foraging$data$cell_volume <- eval_grid[["data"]][["cell_volume"]]
+
+TPD_randomisations_foraging <- TPD_randomisations_foraging[c(length(TPD_randomisations_foraging),1:(length(TPD_randomisations_foraging)-1))]
+
+
+write_rds(file = "Outputs/randomisations_TPD_for.rds", TPD_randomisations_foraging)
+
+  
+closeAllConnections()
+
+```
+
+
+
+

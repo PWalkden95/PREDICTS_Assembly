@@ -1,0 +1,1494 @@
+---
+title: "Assemblage Dispersion Fields"
+author: "Patrick Alexander Walkden"
+date: "03/08/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## PREDICTS Assembly
+
+## Assemblage dispersion fields
+
+There are many decisions that need to be made when performing an analysis of trait based community assembly. The functional diversity metric to use, how to randomise the trait and community matrices to produce null models in the absence of a particular process, and, what we are concerned with here, how to define the species pool which species in this null community are drawn. 
+
+Defining the species pool correctly is integral in any analysis of community assembly and it can be thought of as the pool of species that could potentially disperse to and colonise a focal site in the absence of all other assembly processes, be it environmental filtering or biotic interactions such as competition or limiting similarity. The definition of the species pool affects the degree and thus the interpretation of subsequent results. 
+
+There have been a number of ways suggested to define the species pool. Most simply and commonly used is defining the species pool as all the species observed within a study across all sites. This works adequately when researchers have undertaken their studies with the explicit focus on testing community assembly processes and surveyed communities across an suitably broad environmental gradient. However, using data from PREDICTS studies rarely collect data across the entire land-use gradient therefore by using this method our species pool will always be restricted to those species that are able to persist in the land-use gradient surveyed rather than the entire species pool. Additionally, a lot of what is termed as "dark diversity" (rare species) can be missed.
+
+Therefore another method proposed to define the species pool is by using biogeographic data such as species range maps to calculate an assemblage dispersion field (ADF; [Graves & Rahbek., 2005](https://www.pnas.org/content/102/22/7871.long)) centered on the focal site. An ADF considers the species pool to be all species whose range overlaps the range of any species within the focal site. This can often produce excessively large species pools, especially when some species have expansive ranges, therefore a threshold can be introduced so cells which contain ~60% of the same species as the focal cell are included in the species pool thus creating a more restrictive pool. This has the benefit over the sampled species method as it is not restricted to only considering the species that have been observed within a study and can facilitate the testing of community assembly process on studies that survey a narrow environmental gradient in tandem with the many other studies within PREDICTS. 
+
+I will also be looking at the sensitivity of any results to the threshold of the ADF by having a spectrum of species pools for each site. The most restrictive being, only considering the species whose range maps overlaps with the focal site, then increasing the radius of the ADF to the immediate cells around the sites and a slowly decreasing threshold of the ADF to a minimum of 60% similarity. 
+
+
+## Species-site overlap
+
+Sooooo first things first calculate the first species pool, those whose ranges just overlap with the focal site.
+
+```{r load packages and data}
+
+rm(list = ls())
+
+library(tidyverse) ## for wrangling and general data handling
+library(terra) # mapping
+library(stars)
+library(sp) ## mapping 
+library(raster) ## mapping
+require(sf) ## mapping 
+require(doParallel) ## parallelisation
+require(foreach) ## parallelisation
+require(fasterize)
+
+### load in the refined PREDICTS dataset 
+
+PREDICTS <- readRDS("../Outputs/refined_predicts.rds")
+
+
+```
+
+I am going to extract the coordinates from each of the study sites and using maps from Birdlife extract all those species that overlap 
+
+```{r extract coords, echo=FALSE}
+
+##### get site coordinates 
+
+sites <- PREDICTS %>% dplyr::distinct(SS,SSBS,Longitude,Latitude) %>% data.frame() ### 1697 sites in total 
+
+site_coords <- st_as_sf(SpatialPoints(sites[,c("Longitude","Latitude")], proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs")))
+
+### speices maps - species maps are saved for I am going to get all the file_names within the folder to iterate through 
+
+species_files <- list.files("../../../Datasets/Birdlife_Maps/Shapefiles/PREDICTS_BL/",full.names = TRUE)
+
+
+```
+
+Now equipped with the species maps I am going to collate all the species whose ranges overlap with each site to generate the most restrictive species pool.
+
+
+```{r create species-site matrix}
+
+
+
+
+# register the 8 cores to use while looping
+
+if(any(grepl(list.files("../Outputs"), pattern = "site_spp_matrix"))){
+  site_spp_matrix <- readRDS(file = grep(list.files("../Outputs",full.names = TRUE), pattern = "site_spp_matrix", value = TRUE))
+} else {
+registerDoParallel(cores = 8)
+
+site_spp_matrix <- foreach(range = species_files,  ## for each range file 
+                           .packages = c("tidyverse","maptools","rgdal","sp","raster","rgeos","sf"), ## required packages 
+                           .combine = "cbind", ## how I want the output combined - each iteration will produce a column of a matrix
+                           .inorder = FALSE) %dopar% {   # FALSE speeds things up 
+                               data <- readRDS(range) ## load in range 
+                               
+                               
+                               #### filter data so that distribution polygons are those that represent extant, probably extant and possibly extant presence,
+                               #### native, reintroduced and introduced origin and those that are resident, breeding or non-breeding ranges                     
+                               sp_name <- as.character(data$binomial[1])
+                               
+                               data <- data %>% dplyr::filter(presence %in% c(1,2,3), origin %in% c(1,2,3), seasonal %in% c(1,2,3))
+                               
+                               if(nrow(data) == 0){
+                                 mat <- matrix(rep(NA,nrow(sites)),nrow = nrow(sites), ncol = 1)#    colnames(mat) <- sp_name
+                                 rownames(mat) <- as.character(sites$SSBS)
+                                 
+                                 return(mat)
+                               } else {
+                                 
+                                 #    ## Sometimes the polygons are in funny classes so coerce into MULTIPOLYGON class
+                                 
+                                 if(any(class(data$Shape)[1] == "sfc_MULTISURFACE", class(data$Shape)[1] == "sfc_GEOMETRY")){
+                                   for(k in 1:NROW(data)){
+                                     data$Shape[[k]] <- st_cast(data$Shape[[k]], "MULTIPOLYGON")
+                                   }
+                                 }
+                                 
+                         
+                                 
+                                  shape <- st_combine(data$Shape)
+                                 
+                                 
+                                 
+                                 st_crs(shape) <- "+proj=longlat +datum=WGS84 +no_defs"
+                                 
+                                 
+                                 sf_use_s2(TRUE)
+                                 if(!st_is_valid(shape)){
+                                   sf_use_s2(FALSE)
+                                 }
+                                 ##create a blank matrix species as columns, sites as rows
+                                 
+                                 mat <- matrix(rep(NA,nrow(sites)),nrow = nrow(sites), ncol = 1)
+                                 colnames(mat) <- as.character(data$binomial)[1]
+                                 rownames(mat) <- as.character(sites$SSBS)
+                                 
+                                 ### iterate through sites
+                                 
+                                 
+                                   
+                                   ## calculate overlap this will produce a value of zero if the site lies within it's range
+                                  ### if Overlap = 0 add a 1 to the site indicating presence else a 0
+                                   
+                                   mat[,1] <- ifelse(st_intersects(shape,site_coords, sparse = FALSE )[1,], 1, 0)
+                                   
+                                 
+                                 return(mat)
+                               }
+  }
+  
+  ### close all conenctions
+ #  
+registerDoSEQ()
+closeAllConnections()
+
+write_rds("../Outputs/site_spp_matrix.rds",x =  site_spp_matrix)
+}
+### save
+
+ 
+site_species_richness <-data.frame(Site = rownames(site_spp_matrix), spp_rich = rowSums(site_spp_matrix, na.rm = TRUE))
+species_occurences <- data.frame(Species = colnames(site_spp_matrix), occurrences = colSums(site_spp_matrix, na.rm = TRUE))
+
+
+## the number of species just overlapping the site ranges from 59 in Sao Tome and 591 in Uganda - however this will still be restricted with the removal of certain species based on whether they are nocturnal, raptors, swifts or swallows.  
+
+head(site_species_richness)
+
+## the most commonly occurring birds is Falco peregrinus almost ubiquitously distributed across all sites in 1518, and the many species that dont occur in any 
+
+head(species_occurences)
+
+```
+
+
+## [Assemblage Dispersion Fields](https://www.pnas.org/content/102/22/7871) 
+
+Assemblage Dispersion Fields (ADF) are typically calculated on a 1 degree resolution raster map [Borregaard et al, 2020](https://www.nature.com/articles/s41467-019-14267-y) so first I am going to create a global map of avian diversity by converting species distribution maps into presence absence cells globally. This can be done by "rasterising" the polygons and then summing all the species rasters.
+
+The rationale for including species with an assemblage dispersion field in the potential species pool for a focal site is that if a good proportion of species from the focal site have been able to disperse to the site from a grid cell then the remainder of the species within the target cell should be able to disperse to the focal cell. This has some very obvious caveats that we will address a little later including differential dispersal capabilities of species and environmental affinities [(Lessard et al, 2012)](https://www.sciencedirect.com/science/article/pii/S016953471200167X).
+
+
+``` {r map of avian diversity}
+
+#### load in a 1 deg raster map that can be converted into a blank raster
+
+#### get a blank world map at a one degree resolution -- approx 100km2 at the equator 
+
+if(any(grepl(list.files("../Outputs"), pattern = "blank_map_1deg"))){
+  blank <- readRDS(grep(list.files("../Outputs", full.names = TRUE), pattern = "blank_map_1deg", value = TRUE))
+} else {
+
+blank <- raster("../../../Datasets/Environmental_Variables/gpw_v4_population_density_adjusted_to_2015_unwpp_country_totals_rev11_2000_1_deg.tif")
+
+### reclassify all values that aren't NA - and therefore terrestiral to 0 
+
+blank <- reclassify(blank, c(-Inf,Inf,0))
+
+#### write blank raster map for future use
+
+write_rds(x = blank, file = "../Outputs/blank_map_1deg.rds")
+}
+#########################
+#########################
+
+if(any(grepl(list.files("../Outputs"), pattern = "raster_species_matrix"))){
+  map_data <- readRDS(grep(list.files("../Outputs", full.names = TRUE), pattern = "raster_species_matrix", value = TRUE))
+} else {
+
+ registerDoParallel(cores = 8)
+ 
+ map_data <- foreach(range = species_files,
+                     .combine = "rbind",
+                     .packages = c("tidyverse", "maptools", "rgdal", "sp", "raster","rgeos","sf","fasterize"),
+                     .inorder = FALSE) %dopar% {
+ 
+   
+                        data <- readRDS(range)
+                        
+                        #### filter data so that distirbution polygons are those that reprsent extant, probably extnat and possibly extant presence,
+                        #### native, reintroduced and introduced origin and those that are resident, breeding or non-breeding rnages
+                        
+                        
+                        data <- data %>% dplyr::filter(presence %in% c(1,2,3), origin %in% c(1,2,3), seasonal %in% c(1,2,3))
+                        
+                        
+                        if(nrow(data) == 0){
+                          data <- readRDS(range)
+                          mat <- matrix(blank@data@values, nrow = 1, ncol = length(blank@data@values))
+                          rownames(mat) <- data$binomial[1]
+                          colnames(mat) <- 1:length(blank@data@values)
+                          return(mat)
+                        } else {
+                          
+                          
+                         
+                          ##### funny thing with some ranges so need to convert back to type MULTIPOLYGON
+                          if(any(class(data$Shape)[1] == "sfc_MULTISURFACE", class(data$Shape)[1] == "sfc_GEOMETRY")){
+                            for(k in 1:NROW(data)){
+                              data$Shape[[k]] <- st_cast(data$Shape[[k]], "MULTIPOLYGON")
+                            }
+                          }
+                            
+                          
+        
+                          
+                          shape <- st_combine(data$Shape)
+                          
+                          
+                          
+                          st_crs(shape) <- "+proj=longlat +datum=WGS84 +no_defs"
+                          
+                          
+                          shape <- st_as_sf(shape)
+                          ### convert polygon into a presence raster on the blank world map
+                          
+                          # 
+                          # try(ras <-  raster::rasterize(x = shape, y = blank, getCover = TRUE,background = NA),silent = TRUE)
+                          # ras@data@values <- ifelse(ras@data@values >= 0.1, 1,0)
+                          
+                          
+                          ras <- fasterize::fasterize(sf = shape, raster = blank, fun = "count", background = 0)
+                        
+                          #### extract cells which overlap with the polygon and exclude marine and oceanic ranges by adding blank map
+                          #### that has non-terrestrial cells as NA
+                          
+                          ras_data <- (blank + ras)
+                          
+                          
+                          #### create matrix where the row is the species and each column is a cell in the raster - presence indicated by a 1
+                          
+                          
+                          mat <- matrix(ras_data, nrow = 1, ncol = length(ras_data))
+                          colnames(mat) <- 1:length(ras_data)
+                          rownames(mat) <- data$binomial[1]
+                          
+                         return(mat) 
+                        }
+                     }
+ 
+ registerDoSEQ()
+ closeAllConnections()
+ 
+ ## save output map data that can then be put given to the blank raster
+ write_rds(x= map_data, file = "../Outputs/raster_species_matrix.rds")
+}
+ 
+
+spp_rich_df <- data.frame(Cell = colnames(map_data), spp_rich = colSums(map_data, na.rm = TRUE))
+
+diversity <- blank
+
+diversity@data@values <- (blank@data@values + spp_rich_df$spp_rich)
+
+plot(diversity)
+
+
+
+```
+
+With this diversity matrix with the species as rows and cells as columns we can then can the similarity between any two cells. Using this principle I can then begin to calculate the assemblage dispersion fields for each of the sites within PREDICTS. First by locating which cell each site is in and then calculating the similarity of every other cell. 
+
+```{r focal cell similarity}
+
+########################################################
+###### PREDICTS SITES ASSEMBLAGE SIMILARITY MATRIX #####
+########################################################
+
+#### Which cell is each site located in 
+
+sites$cell <- raster::cellFromXY(blank, sites[,c("Longitude", "Latitude")])
+
+
+## This loop is going to create a matrix with rows being the cell in which a site is located and columns being all other raster cells
+## the value of each cell will the proportion of species shared between each cell
+
+site_cells <- unique(sites$cell)
+
+
+
+adf_sim_func <- function(cells){
+  
+  mat <- matrix(rep(NA,ncol(map_data)), nrow = 1, ncol = ncol(map_data))
+  
+  
+  ### This bit is kinda redundant when looking just at sites but if we were to do this for all cells then this would create an row of NAs when 
+  ### the target cell had no species present within - this includes marine and oceanic cells.     
+  
+  if(!any(!is.na(as.numeric(map_data[,cells])))){
+    rownames(mat) <- cells
+    colnames(mat) <- 1:ncol(map_data)
+  } else {
+    
+    
+    ## extract species that are present within a specified cell 
+    
+    focal_spp <- names(which(map_data[,cells] == 1))
+    
+    ### get all other cells minus the focal cell
+    
+    other_cells <- c(1:(cells-1),(cells+1):ncol(map_data))
+    
+    ### create blank matrix 
+    
+    colnames(mat) <- 1:ncol(map_data)
+    
+    ## cell shares all species with itself
+    
+    mat[,cells] <- 1
+    rownames(mat) <- cells
+    
+    ### for all other cells extract species and calculate proportion of pseices shared with focal cell 
+    
+    for(other in other_cells){
+      
+      ### if there are no species that aren't classified as NA in the map data then the proportion on similarity is 0 - obvs 
+      
+      if(!any(!is.na(as.numeric(map_data[,other])))){
+        prop <- NA
+      } else {
+        
+        ## extract the species with in the other cell 
+        
+        other_spp <- names(which(map_data[,other] == 1))
+        
+        ### if the cell is terrestrial but has no species in it then the other species is none
+        
+        if(is_empty(other_spp)){
+          other_spp <- "none"
+        }
+        
+        ### how many species are shared between the two cells
+        
+        sim <- length(which(focal_spp %in% other_spp)) 
+        
+        # if none similarity is 0 
+        
+        
+        prop <- ifelse(sim != 0, sim/length(focal_spp), 0)
+        
+        
+      }
+      
+      ### input the data into the matrix 
+      
+      mat[,other] <- prop
+    }
+    
+  }
+  
+  return(mat)
+}
+
+
+if(any(grepl(list.files("../Outputs"), pattern = "predicts_site_cell_matrix"))){
+  site_cell_matrix <- readRDS(grep(list.files("../Outputs", full.names = TRUE), pattern = "predicts_site_cell_matrix", value = TRUE))
+} else {
+
+
+ registerDoParallel(cores = 5)
+ 
+ site_cell_matrix <- foreach(cell = site_cells,
+                             .combine = "rbind",
+                             .packages = c("tidyverse", "raster", "maptools", "rgeos", "sf", "sp"),
+                             .inorder = FALSE) %dopar% {
+ 
+                adf_sim <- adf_sim_func(cells = cell)
+ 
+ 
+                             }
+ 
+ registerDoSEQ()
+ closeAllConnections()
+ 
+  write_rds(file = "../Outputs/predicts_site_cell_matrix.rds", x = site_cell_matrix)
+}
+  
+ 
+```
+
+The resulting matrix will have the proportion of species shared between the focal cell. So now we can begin to visulaise the shapes of these dispersion fields and the area from which we are going to be extracting our species pool from. 
+
+
+```{r adfs}
+dir.create("../Outputs/assemblage_dispersion_fields")
+
+for(i in 1:nrow(site_cell_matrix)){
+
+  ### get the studies which have sites within this cell
+  
+  study <- sites %>% filter(cell == rownames(site_cell_matrix)[i]) %>% distinct(SS) %>% pull() 
+  study <- paste(study,collapse = "&")
+  
+  # create a directory
+  
+  dir <- paste("../Outputs/assemblage_dispersion_fields/",paste(study,i,sep = "_"), sep = "")
+  
+ #dir.create(dir)
+  
+  ## get each of the cell similarity scores
+  
+  adf <- site_cell_matrix[i,]
+
+  ## input into blank raster
+  
+adf_map <- blank
+
+adf_map@data@values <- adf
+
+### save the raw similarity scores
+
+png(paste(dir,"/","adf.png",sep = ""))
+plot(adf_map)
+dev.off()
+
+
+### which cells are above the threshold for similarity 
+
+for(sim in c(0.9,0.8,0.7,0.6)){
+
+  ## save the resulting map indicating the cells whose species will be included in the species pool.
+  
+  png(paste(dir,"/",sim,".png",sep = ""))
+  plot(adf_map > sim)
+  dev.off()
+}
+
+}
+
+plot(adf_map)
+
+plot(adf_map > 0.6)
+plot(adf_map > 0.7)
+plot(adf_map > 0.8)
+plot(adf_map > 0.9)
+
+
+
+```
+
+After this I would like to see how many species each of these thresholds generally include in there ADF, as obviously the lower the threshold the more species that are going to be included and this can influence the inferences of an anylsis as teh larger the species pool the more likely you are to find a difference between the observed and the null communities [(Cornell & Harrison, 2014)](https://www.annualreviews.org/doi/abs/10.1146/annurev-ecolsys-120213-091759).
+
+``` {r ADF richness}
+
+######## This function checks to see how many species are incorporate into the adf depending on the threshold for cell similarity from 0.1 to 11 
+
+
+adf_spp_rich <- function(cells, data){
+
+  ## create a blank matrix with 11 rows (seq(0,1,0.1)) and the amount of columns of the cells to check 
+  
+adf_nspp <- matrix(rep(NA,11*length(cells)), nrow = 11, ncol = length(cells))
+rownames(adf_nspp) <- as.character(seq(0,1,0.1))
+colnames(adf_nspp) <- as.character(cells)
+
+### for each cell and proportion combination
+
+for(cell in cells){
+
+for(prop in seq(0,1,0.1)){
+
+prop_cells <- which(data[as.character(cell),] > prop)
+
+if(length(prop_cells) == 1){
+  prop_species <- rownames(map_data)[which(map_data[,prop_cells] == 1)]
+} else{
+prop_species <- rownames(map_data)[which(rowSums(map_data[,prop_cells],na.rm = TRUE) > 0)]
+}
+
+#### how many species occupy the cells with that similarity
+
+n_spp <- length(prop_species)
+
+adf_nspp[as.character(prop),as.character(cell)] <- n_spp 
+}
+}
+return(adf_nspp)
+}
+
+#### run funciton for all our site focal cells 
+
+adf_richness <- adf_spp_rich(site_cells, site_cell_matrix)
+
+adf <- blank
+
+adf@data@values <- site_cell_matrix["32227",]
+
+
+plot(adf)
+
+```
+Here we can see that some of the focal cells for some of our sites are predominately in the ocean so are picking up oceanic and palegic species in the similarity analysis, so I am going to identify the problem cells and reassign the focal cell to the surrounding cell which has the most similar species to those that directly overlap with the site coordinates.  
+
+The problem cells can be easily identified with the number of species that are present within the unrestricted adf.
+
+``` {r resolve problem cells}
+
+ 
+  ## identify problem cells
+  
+  problem_cells <- c(as.numeric(names(which(adf_richness[1,] < 9000))),30881)
+  
+  ## data frame to contain the re-assigned cell 
+  
+  resolve <- data.frame(problem_c = problem_cells, resolve_cells = NA)
+  
+  ### for each of the problem cells 
+  
+  for(problem in problem_cells){
+    
+    ### what sites are within the probelm cell and pick one
+    
+    prob_site <- sites %>% dplyr::filter(cell == problem) %>% dplyr::distinct(SSBS) %>% pull() %>% as.character()
+    prob_site <- prob_site[1]
+    
+    ## what are the species overlapping the site 
+    
+    prob_spp <- names(which(site_spp_matrix[prob_site,] == 1))
+    
+    ### get the surround cells  
+    
+    surround <- adjacent(blank, problem, directions = 8 )[,2]
+    
+    
+    ### for each of the surrounding cells 
+    
+    sound_prob <- c()
+    for(s_cell in surround){
+      
+      ### what species are within
+      
+      sound_spp <-  names(which(map_data[,s_cell] == 1))
+      
+      ### calculate similarity between surrounding cell and site
+      
+      sound_sim <- length(which(prob_spp %in% sound_spp))/length(prob_spp)
+      
+      # store
+      
+      sound_prob <- c(sound_prob,sound_sim)
+      
+    }
+    
+    # which of the surrounding cells has teh greatest similarity
+    
+    solve_cell <- surround[which.max(sound_prob)]
+    
+    ## reassign
+    
+    resolve <- resolve %>% dplyr::mutate(resolve_cells = ifelse(problem_c == problem, as.numeric(solve_cell), resolve_cells))
+    
+  }
+  
+  sites$new_cell <- sites$cell
+  sites <- sites %>% dplyr::mutate(new_cell = ifelse(SSBS == "FB1_2007a_Barlow 1 1", 32528, cell))
+  
+  for(i in 1:nrow(resolve)){
+    sites <- sites %>% dplyr::mutate(new_cell = ifelse(cell == resolve[i,"problem_c"], resolve[i,"resolve_cells"],new_cell ))
+  }
+  
+
+```
+
+Soo hopefully now the problem cells have been resolved can re-do the species-threshold check
+
+```{r re-do}
+
+## new cells
+
+ 
+  new_cells <- unique(sites$new_cell)
+  
+  
+  #### add new cells to the site_cell_matrix 
+  
+  add <- new_cells[which(!(new_cells %in% site_cells))]
+  
+  
+  
+  
+  new_mat <- c()
+  for(a in add){
+    m <- adf_sim_func(cells = a)
+    new_mat <- rbind(new_mat,m)
+  }
+  
+  
+  site_cell_matrix <- rbind(site_cell_matrix,new_mat)
+  
+  
+  ## run the cell richness function again
+  
+  adf_richness <- adf_spp_rich(new_cells,site_cell_matrix)
+  
+  
+  ##### the persistent problem cells are those of the studies on small islands, such a sao tome and principe, puerto rico and comoros
+  
+  problem_cells <- as.numeric(names(which(adf_richness[1,] < 9000)))
+  
+
+  
+  
+  ############################################
+  ############################################
+  ############################################
+  ############################################ 
+  ############################################
+  
+  island_polys <- readRDS("../Outputs/assembly_islands.rds")
+  island_spp <- readRDS("../Outputs/assembly_island_spp.rds")
+  
+  
+  
+  adf_sim_func_island <- function(cells){
+    
+    mat <- matrix(rep(NA,ncol(map_data)), nrow = 1, ncol = ncol(map_data))
+    
+    
+    ### This bit is kinda redundant when looking just at sites but if we were to do this for all cells then this would create an row of NAs when 
+    ### the target cell had no species present within - this includes marine and oceanic cells.     
+    
+    if(!any(!is.na(as.numeric(map_data[,cells])))){
+      rownames(mat) <- cells
+      colnames(mat) <- 1:ncol(map_data)
+    } else {
+      
+      
+      
+      coords <- sites %>% dplyr::filter(new_cell == cells) %>% dplyr::distinct(Longitude,Latitude)
+      coords <- coords[1,]
+      coords <- st_as_sf(SpatialPoints(coords[,c("Longitude","Latitude")], proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs")))
+      
+      
+      ## extract species that are present within a specified cell for the island form the focal cell species will be all species overlaping with that island
+      
+      for(island in names(island_polys)){
+        isle_poly <- st_as_sf(island_polys[[island]])
+        st_crs(isle_poly) <- st_crs(coords)
+        if(as.numeric(st_distance(coords,isle_poly)[1,1]) < 100 ){
+          focal_spp <- island_spp[[island]]
+          break()
+        }
+      }
+      
+      
+      
+      ### get all other cells minus the focal cell
+      
+      other_cells <- c(1:(cells-1),(cells+1):ncol(map_data))
+      
+      ### create blank matrix 
+      
+      colnames(mat) <- 1:ncol(map_data)
+      
+      ## cell shares all species with itself
+      
+      mat[,cells] <- 1
+      rownames(mat) <- cells
+      
+      ### for all other cells extract species and calculate proportion of pseices shared with focal cell 
+      
+      for(other in other_cells){
+        
+        ### if there are no species that aren't classified as NA in the map data then the proportion on similarity is 0 - obvs 
+        
+        if(!any(!is.na(as.numeric(map_data[,other])))){
+          prop <- NA
+        } else {
+          
+          ## extract the species with in the other cell 
+          
+          other_spp <- names(which(map_data[,other] == 1))
+          
+          ### if the cell is terrestrial but has no species in it then the other species is none
+          
+          if(is_empty(other_spp)){
+            other_spp <- "none"
+          }
+          
+          ### how many species are shared between the two cells
+          
+          sim <- length(which(focal_spp %in% other_spp)) 
+          
+          # if none similarity is 0 
+          
+          
+          prop <- ifelse(sim != 0, sim/length(focal_spp), 0)
+          
+          
+        }
+        
+        ### input the data into the matrix 
+        
+        mat[,other] <- prop
+      }
+      
+    }
+    
+    return(mat)
+  }
+  
+  
+  for(prob in problem_cells){
+    m <- adf_sim_func_island(prob)
+    site_cell_matrix[as.character(prob),] <- m
+  }
+  
+  
+  site_cell_matrix <- site_cell_matrix[!duplicated(rownames(site_cell_matrix)),]
+  write_rds(file = "../Outputs/predicts_site_cell_matrix.rds", x = site_cell_matrix)
+  
+  sites <- sites %>% dplyr::mutate(problem_cells = ifelse(new_cell %in% problem_cells, TRUE, FALSE))
+  write_rds(file = "../Outputs/adf_sites_frame.rds", sites)
+
+
+
+for(i in problem_cells){
+
+  ### get the studies which have sites within this cell
+  
+  study <- sites %>% filter(new_cell == i) %>% distinct(SS) %>% pull() 
+  study <- paste(study,collapse = "&")
+  
+  # create a directory
+  
+  dir <- paste("../assemblage_dispersion_fields/",paste(study,i,sep = "_"), sep = "")
+  
+ dir.create(dir)
+  
+  ## get each of the cell similarity scores
+  
+  adf <- site_cell_matrix[as.character(i),]
+
+  ## input into blank raster
+  
+adf_map <- blank
+
+adf_map@data@values <- adf
+
+### save the raw similarity scores
+
+png(paste(dir,"/","adf.png",sep = ""))
+plot(adf_map)
+dev.off()
+
+### which cells are above the threshold for similarity 
+
+for(sim in c(0.9,0.8,0.7,0.6)){
+
+  ## save the resulting map indicating the cells whose species will be included in the species pool.
+  
+  png(paste(dir,"/",sim,".png",sep = ""))
+  plot(adf_map > sim)
+  dev.off()
+}
+
+}
+
+
+
+
+adf <- blank
+
+adf@data@values <- blank@data@values + site_cell_matrix["32587",]
+
+plot(adf)
+
+```
+
+
+## Excluding species from the species pools
+
+Certain species are going to need to be excluded form the species pool depending on their life history because it is unlikely they would have been observed during the surveying or if they were it is unlikely that they are resident in habitat and therefore not going to be impacted by the land use. Excluded species include:
+
+- Nocturnal species
+
+- Marine species
+
+- Coastal species
+
+- swifts - aerial 
+
+- swallows - aerial
+
+- martins - aerial 
+
+- raptors - aerial 
+
+
+```{r excluding species}
+
+## READ in AVONET and make sure some taxonomic discrepancies are resovled.
+
+AVONET <- read.csv("../../../Datasets/GBD/GBD_2021_BirdLife_Taxo_19 April.csv") %>%
+  dplyr::mutate(Birdlife_Name = ifelse(Birdlife_Name == "Gorsachius magnificus", "Oroanassa magnifica", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula krameri", "Alexandrinus krameri", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Arachnothera hypogrammica", "Kurochkinegramma hypogrammica", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula eupatria", "Palaeornis eupatria", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula finschii", "Himalayapsitta finschii", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula roseata", "Himalayapsitta roseata", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula longicauda", "Belocercus longicaudus", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Hapalocrex flaviventer", "Laterallus flaviventer", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Hylocharis chrysura", "Amazilia chrysura", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Porzana spiloptera", "Laterallus spilopterus", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Hylocharis cyanus", "Amazilia cyanus", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Chrysuronia oenone", "Amazilia oenone", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Hylocharis eliciae", "Amazilia eliciae", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Juliamyia julie", "Amazilia julie", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Lepidopyga goudoti", "Amazilia goudoti", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Lepidopyga coeruleogularis", "Amazilia coeruleogularis", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula himalayana", "Himalayapsitta himalayana", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula columboides", "Nicopsitta columboides", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula cyanocephala", "Himalayapsitta cyanocephala", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula calthrapae", "Nicopsitta calthrapae", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psittacula eques", "Alexandrinus eques", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Lepidopyga lilliae", "Amazilia lilliae", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Heteroglaux blewitti", "Athene blewitti", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Atlantisia rogersi", "Laterallus rogersi", paste(Birdlife_Name)),
+                Birdlife_Name = ifelse(Birdlife_Name == "Psitteuteles iris", "Trichoglossus iris", paste(Birdlife_Name)))
+
+## read in the Foraging dataset 
+
+Forage <- readRDS("../../PREDICTS_Taxonomy/PREDICTS_imputed_BL_traits_forage.rds")
+
+### extract all the species that have been flagged for exclusion
+Nocturnal_spp <- AVONET %>% dplyr::filter(Nocturnal == 1) %>% pull(Birdlife_Name)
+marine_spp <- AVONET %>% filter(Primary_Habitat_updated == "Marine") %>% pull(Birdlife_Name)
+swift_spp <- AVONET %>% filter(Birdlife_family %in%  c("Apodidae","Hemiprocnidae")) %>% pull(Birdlife_Name)
+swallow_spp <- AVONET %>% filter(Birdlife_family %in% c("Hirundinidae","Artamidae")) %>% pull(Birdlife_Name)
+raptor_spp <- AVONET %>% filter(Birdlife_family %in% c("Accipitridae","Cathartidae","Falconidae")) %>% pull(Birdlife_Name)
+coastal_spp <- AVONET %>% filter(Primary_Habitat_updated == "Coastal") %>% pull(Birdlife_Name)
+Extinct_spp <- AVONET %>% filter(is.na(Extinct..Yes.1..No.0.)) %>% pull(Birdlife_Name)
+Extinct_spp <- unique(c(Extinct_spp,"Pinguinus impennis","Conuropsis carolinensis","Ectopistes migratorius","Camptorhynchus labradorius","Psephotellus pulcherrimus","Ara tricolor","Chenonetta finschi","Coturnix novaezelandiae","Ixobrychus novaezelandiae","Mergus australis","Sceloglaux albifacies","Tribonyx hodgenorum","Turnagra capensis","Xenicus longipes","Coenocorypha barrierensis","Heteralocha acutirostris","Porphyrio mantelli","Turnagra tanagra","Podiceps andinus","Tachybaptus rufolavatus","Ophrysia superciliosa","Anas marecula","Bulweria bifax","Alopochen mauritiana","Columba jouyi","Coua delalandei","Falco duboisi","Moho braccatus","Himatione fraithii"))
+
+drop_spp <- unique(c(Nocturnal_spp,marine_spp,swift_spp,swallow_spp,raptor_spp,coastal_spp,Extinct_spp, "Accipiter_1","Aerodramus_1","Aerodramus_2","Chaetura_1","Apus_1","Collocalia_1"))
+
+### excluding 1385 species from inclusion in the species pool. 
+
+write_rds(file = "../Outputs/assembly_drop_spp.rds", drop_spp)
+
+```
+
+I am going to define a spectrum of species pools from the most restrictive to just the species whose ranges overlaps the site coordinates and then just those species that occur in the immediate surrounding cells. Then the rest are adf species rnging from a similarity threshold of 0.6 to 0.9. 
+
+
+
+``` {r species pools}
+
+
+### species poool function that has the input of the focal site
+
+
+species_pool_func <- function(site){
+  
+  
+  ### create a list on item for each of the species pools
+  spp_pool_list <- c(rep(list(NA),6))
+  
+  ### name them 
+  names(spp_pool_list) <- c("0.6","0.7","0.8","0.9","surround","site_overlap")
+  
+  
+  ### each species pool should always have the species that were observed in the study which after begin validated indicates a definite abiility to colonise the site regardless of species maps -- excluding the generated pseudospp from the range validation
+  
+  # PREDICTS extraction
+  
+  site_spp <- PREDICTS %>% dplyr::filter(SSBS == site, !pseudospp) %>% distinct(Birdlife_Name) %>% pull()
+  
+  ## site overlap extraction
+  
+  site_spp <- unique(c(names(which(site_spp_matrix[site,] == 1)),site_spp))
+  
+  ## drop species 
+  
+  site_spp <- site_spp[which(!(site_spp %in% drop_spp))]
+  
+  ### assign species
+  
+  spp_pool_list[["site_overlap"]] <- site_spp
+
+ 
+  ## now we need to pull the cell in which the site occurs
+  
+  site_cell <- sites %>% dplyr::filter(SSBS == site) %>% dplyr::distinct(new_cell) %>% pull()
+  
+  ## if the cell is part of the problem cells which are on islands teh species pools need to be defined in a slightly different way 
+  
+  if(site_cell %in% problem_cells){
+
+    ## get the coordinates so that we know which island species need to be assigned
+    
+    coords <- sites %>% dplyr::filter(SSBS == site) %>% dplyr::distinct(Longitude,Latitude) 
+    coords <- st_as_sf(SpatialPoints(coords[,c("Longitude","Latitude")], proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs")))
+    
+    ### for the surrounding species it will just be those species which occur anywhere on the entire island
+    
+     for(island in names(island_polys)){
+      
+      island_pol <- st_as_sf(island_polys[[island]])
+      st_crs(island_pol) <- st_crs(coords)
+      
+      ## find out which island
+      if(as.numeric(st_distance(coords,island_pol)[1,1]) < 1000){
+        surround_spp <- unique(c(site_spp,island_spp[[island]]))
+        
+        ## drop species
+        
+        surround_spp <- surround_spp[which(!(surround_spp %in% drop_spp))]
+        
+        #assign
+        
+        spp_pool_list[["surround"]] <- surround_spp
+        
+        ## stop looop once assigned
+        break()
+      }
+    }
+    
+    ## for each of the threshold of similarity
+    
+      for(prop in c(0.6,0.7,0.8,0.9)){
+   
+        ### get the cells which surpass the threshold of similarity
+  prop_cells <- which(site_cell_matrix[as.character(site_cell),] > prop)
+
+if(length(prop_cells) < 2){
+  
+  ## if there are less that two cells so it would be cell the single focal cell assign all the species on the island
+  prop_species <- surround_spp
+
+} else{
+  
+  ### assign all the species on the island and those cells that surpass the threshold 
+  prop_species <- unique(c(site_spp,surround_spp,rownames(map_data)[which(rowSums(map_data[,prop_cells],na.rm = TRUE) > 0)]))
+  prop_species <- prop_species[which(!(prop_species %in% drop_spp))]
+}
+  spp_pool_list[[as.character(prop)]] <- prop_species
+  
+  }
+    
+  
+    ######################################## THIS IS FOR THE NON_PROBLEM CELLS
+      ########################################
+    
+  } else {
+  
+    ## get all the cells which surround the focal cell AND the focal cell
+    
+  surround_cells <- unique(c(site_cell,adjacent(site_cell,x = blank,directions = 8 )[,2]))  
+  
+  #the species that contained within those cells
+  
+  surround_spp <- unique(c(site_spp,rownames(map_data)[which(rowSums(map_data[,surround_cells],na.rm = TRUE) > 0)])) 
+  
+  #drop species
+  
+  surround_spp <- surround_spp[which(!(surround_spp %in% drop_spp))]
+  
+  #assign
+  
+  spp_pool_list[["surround"]] <- surround_spp
+    
+  #for each similarity threshold
+  
+  for(prop in c(0.6,0.7,0.8,0.9)){
+   
+    ## the cells that surpass that threshold
+    
+  prop_cells <- which(site_cell_matrix[as.character(site_cell),] > prop)
+
+if(length(prop_cells) < 2){
+  
+  # species that occur within a single cell - random that this needs to be done but rowSums doesn't work when there's just a single cell
+  prop_species <- unique(c(site_spp,rownames(map_data)[which(map_data[,prop_cells] == 1)]))
+  
+  # drop
+  
+  prop_species <- prop_species[which(!(prop_species %in% drop_spp))]
+  
+} else{
+  
+  # species that occur in those cells
+  prop_species <- unique(c(site_spp,rownames(map_data)[which(rowSums(map_data[,prop_cells],na.rm = TRUE) > 0)]))
+  
+  #drop
+  
+  prop_species <- prop_species[which(!(prop_species %in% drop_spp))]
+}
+  
+  #assign
+  
+  spp_pool_list[[as.character(prop)]] <- prop_species
+  
+  }
+  }
+  
+return(spp_pool_list)
+    
+}
+
+## the sites
+sp_pool_sites <- as.character(unique(sites$SSBS))
+
+# blank list 
+
+species_pools <- lapply(sp_pool_sites,species_pool_func)
+names(species_pools) <- sp_pool_sites
+
+#save
+
+write_rds(file = "../Outputs/predicts_sites_species_pools.rds", species_pools)
+
+
+```
+
+## Further refining the species pool 
+
+[Lessard et al, 2012](https://www.sciencedirect.com/science/article/pii/S016953471200167X)'s paper "Inferring local ecological processes amid species pool influences" suggests various ways of defining the species pool to detect non-random processes of assembly and highlights the utility of making the definition ecologically explicit to impart as much realism as possible. Much of the idiosyncrasy in community ecology arises as a result 
+of geographic variation in the evolutionary and historical processes that have shaped the structure of the species pool. As such, species pools need to take into account the ecological processes that may influence the structure of the species pool, such as species dispersal capabilities and environmental affinity for a specific location.   
+
+These ecological contingencies can be accounted for when performing null model analyses by weighting the probability of a species' traits being selected by species-specific dispersal and environmental probabilities. 
+
+### Dispersal probability
+
+Recently the Hand-Wing Index (HWI) has been adopted as a proxy for dispersal ability in birds [Sheard et al, 2020](https://www.nature.com/articles/s41467-020-16313-6#MOESM1) with larger HWI values being associated with a greater dispersal capability. Therefore a potential metric for dispersal probability could look like (HWI)/(distance to range edge).
+
+```{r Dispersal probabilities}
+rm(list = ls())
+
+
+species_pools <- readRDS("Outputs/predicts_sites_species_pools.rds")
+species_files <- list.files("../../Datasets/Birdlife_Maps/Shapefiles/PREDICTS_BL/",full.names = TRUE)
+PREDICTS <- readRDS("../PREDICTS_Assembly/Outputs/refined_predicts.rds")
+
+
+assembly_species <- unique(c(unlist(unlist(species_pools))))
+
+
+index_list_sp <- function(list){
+  pool_sp <- c()
+  for(i in 1:length(list)){
+    pool_sp <- unique(c(pool_sp,list[[i]]))
+  }
+  return(pool_sp)
+}
+
+
+ 
+
+site_find <- function(sp){
+  sp_site <- c()
+  
+  for(i in 1:length(species_pools)){
+    pool_sp <- index_list_sp(species_pools[[i]])
+    
+    if(sp %in% pool_sp){
+      sp_site <- c(sp_site,names(species_pools)[i])
+    }
+  }
+  return(sp_site)
+}
+
+
+
+
+coords <- PREDICTS %>% distinct(SSBS,Longitude,Latitude)
+
+
+if(any(grepl(list.files("Outputs"), pattern = "site_sp_distance"))){
+  site_spp_dist <- readRDS(grep(list.files("Outputs", full.names = TRUE), pattern = "site_sp_distance", value = TRUE))
+} else {
+
+
+ registerDoParallel(cores = 8)
+ 
+ site_spp_dist <- foreach(sp = assembly_species,
+                     .combine = "cbind",
+                     .packages = c("tidyverse", "maptools", "rgdal", "sp", "raster","rgeos","sf","fasterize"),
+                     .inorder = FALSE) %dopar% {
+                       
+                         
+                         
+ data <- readRDS(grep(species_files, pattern = paste("/",sp,"Birdlife",sep = ""), value = TRUE))
+   
+  
+                       #### filter data so that distribution polygons are those that represent extant, probably extant and possibly extant presence,
+                       #### native, reintroduced and introduced origin and those that are resident, breeding or non-breeding ranges
+   
+   mat <- matrix(rep(NA,length(species_pools)), ncol = 1)
+   colnames(mat) <- sp
+   rownames(mat) <- names(species_pools)
+   
+   
+                       data <- data %>% dplyr::filter(presence %in% c(1,2,3), origin %in% c(1,2,3), seasonal %in% c(1,2,3))
+                       
+                       
+         
+ 
+                       ##### funny thing with some ranges so need to convert back to type MULTIPOLYGON
+ 
+                       if(any(class(data$Shape)[1] == "sfc_MULTISURFACE", class(data$Shape)[1] == "sfc_GEOMETRY")){
+                         for(k in 1:NROW(data)){
+                           data$Shape[[k]] <- st_cast(data$Shape[[k]], "MULTIPOLYGON")
+                         }
+                       }
+ 
+                      ##### polygon checks using the st/sf package polygons need to be in a certain format and these functions resolve these issues if not a bit fiddly
+      
+shape <- st_combine(data$Shape)       
+
+st_crs(shape) <- "+proj=longlat +datum=WGS84 +no_defs"
+  
+  
+#### if any are still unvalid you will be unable to combine the polygons therefore you have to turn off S2 geography - this is GIS stuff I don't quite understand it just makes it work but with a but of a time penalty and some caveats so only going to use when absolutely necessary
+  sf_use_s2(TRUE)
+  if(!st_is_valid(shape)){
+    sf_use_s2(FALSE)
+  }
+  
+
+                     
+                       sp_sites <- site_find(sp)
+                       
+                     
+                       s_coords <- coords %>% dplyr::filter(SSBS %in% sp_sites) %>% dplyr::select(-SSBS)
+                           
+                           s_coords <- st_as_sf(SpatialPoints(s_coords, proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs")))
+                         
+                           
+                           as.numeric(st_distance(x = s_coords,y = shape))
+                           
+                           mat[sp_sites,sp] <- as.numeric(st_distance(s_coords,shape))
+                           
+                           
+                      
+  
+                       return(mat)                  
+ }
+ 
+ registerDoSEQ()
+ closeAllConnections()
+ 
+ write_rds(site_spp_dist, file = "Outputs/site_sp_distance.rds")
+
+}
+ 
+registerDoSEQ()
+
+
+traits <- readRDS("../PREDICTS_Taxonomy/PREDICTS_imputed_BL_traits.rds") %>% dplyr::mutate(ScaleHWI = Hand.Wing.Index/max(Hand.Wing.Index))
+
+
+
+## higher the hand wing index the greater the probability of selection + 
+## the further away the range edge the lower the probability of selection
+
+
+# soooooooooooooooo if dist to range edge probability should be 1 and then the greater the distance the lower the probability modulated by HWI
+### 
+
+
+
+dispersal_prob <- site_spp_dist/max(site_spp_dist,na.rm = TRUE) 
+for(sp in colnames(site_spp_dist)){
+
+  HWI <- traits %>% dplyr::filter(uniqueIDS == sp) %>% dplyr::select(ScaleHWI) %>% pull()
+  
+  dispersal_prob[,sp] <- 1 - pgamma(q = dispersal_prob[,sp], shape = HWI)
+}
+
+
+
+## Hand_wing index scaled between 0 and 1
+ 
+plot(1-sapply(seq(0,1,0.01),function(x) pgamma(q = x,shape = 0.1)))
+
+sapply(seq(0,1,0.01),function(x) pgamma(x,shape = 0.5))
+
+write_rds(dispersal_prob, file = "Outputs/sp_dispersal_probabilities.rds")
+
+```
+
+### Environmental affinity
+
+An ideal approach for estimating species specific environmental affinities would be to quantify directly habitat requirements and phsiological limits (potentially by performing species distribution modelling whose output is a probability of presence based on the environmental conditions at a cell). I think that these maps may be available from Stephen Willis in Durham so will need to ask Joe about these. Lessard cautions against using the same data to derive environmental affinities as used for delineating the species pool to avoid the risk of circular reasoning so getting these projections would be useful as they'll defintely be based on new data.
+
+```{r environmental affinities}
+
+
+crosswalk <- read.csv("../../PhD_Code/PREDICTS_Taxonomy/BL_Jetz crosswalk v3.csv")
+
+# get the list of files that have the model outputs - in the methodology species that occupied fewer that 10 grid cells were excluded from
+# the analysis so I'm going to need to come up with something to do about those.
+
+SDM_sp <- list.files("../../Datasets/Bird_SDM_Projections_Probability/")
+
+## get just species names 
+sp <- gsub(x = gsub(x= SDM_sp, replacement = "", pattern = "\\.rds"), pattern = "_", replacement = " ")
+
+sdm_species <- data.frame(Birdlife_Name = sp)
+
+
+
+resolve_species <- read.csv("../../Datasets/Bird_SDM_Projections_Probability/Miss_sp.csv")
+
+
+##### I'm just going to be looking at the environmental affinities for those species in the 0.9 species pools 
+##### this is because this is the species pool I am initially going on with and then I had to do less manual resolutions of mismatched species
+
+assembly_species <- c()
+for(i in 1:length(species_pools)){
+  assembly_species <- unique(c(assembly_species, species_pools[[i]][["0.9"]]))
+}
+
+
+
+
+sites <- rownames(site_spp_dist)
+
+environmental_probabilities <- matrix(rep(NA,length(sites)*length(assembly_species)), nrow = length(sites), ncol = length(assembly_species))
+rownames(environmental_probabilities) <- sites
+colnames(environmental_probabilities) <- assembly_species
+
+
+######
+###### So given that the SDM files does not fully cover the assembly species with the update taxonomy the three years since the inital analysis was performed there are a few different pathways to get the environmental affinty of a species to a site. First its easy when the species is present just need to transform site coordinates and extract the probability of presense given the environmental variables.
+###### Second if teh taxonomy has changed since the stduy was perfromed I was able to detct changes and point the species to a potential surrogate and then just load that SDM and extract the probability
+###### Third if a species has split into multiple since I've taken the mean probability of presence of the three sister taxon
+###### Fourth if there is no map, often due to too few cells being occupied to perform the analysis, probability of presence doesn't really come into it, if the site overlaps with the study site the probability is one and else zero. 
+
+## for species in teh assembly pool
+
+
+
+for(sp in assembly_species){
+print(sp)  
+  ## if the species was missing from the SDM data given 
+  
+    if(sp %in% resolve_species$Birdlife_Name){
+    
+    ## get that species data
+      
+    res_dat <- resolve_species %>% dplyr::filter(Birdlife_Name == sp) 
+    
+    ## if the species is set to be dropped due to too few cells often or for two species quite mysterious reasons
+    
+    ###########################
+    ################ SCENAIO 4
+    ###########################
+    
+    if(res_dat$DROP){
+      
+      ### load in the species poly
+      
+      sp_poly <- readRDS(grep(species_files, pattern = paste("/",sp,"Birdlife",sep = ""), value = TRUE))
+  
+      ## filter ranges 
+      
+      sp_poly <- sp_poly %>% dplyr::filter(presence %in% c(1,2,3), origin %in% c(1,2,3), seasonal %in% c(1,2,3))
+                       
+                       ##### funny thing with some ranges so need to convert back to type MULTIPOLYGON
+ 
+                       if(any(class(sp_poly$Shape)[1] == "sfc_MULTISURFACE", class(sp_poly$Shape)[1] == "sfc_GEOMETRY")){
+                         for(k in 1:NROW(sp_poly)){
+                           sp_poly$Shape[[k]] <- st_cast(sp_poly$Shape[[k]], "MULTIPOLYGON")
+                         }
+                       }
+ 
+      #combine
+
+  sp_shape <- st_combine(sp_poly$Shape)
+  
+  ## give crs
+  
+  st_crs(sp_shape) <- "+proj=longlat +datum=WGS84 +no_defs"
+  
+  ## what sites does this species turn up in the species pool 
+                                
+                                 if(!st_is_valid(sp_shape)){
+                                   sf_use_s2(FALSE)
+                                 }
+  
+  
+   sp_sites <- site_find(sp)
+  
+   # get coordinates
+   
+   sp_sites <- PREDICTS %>% dplyr::filter(SSBS %in% sp_sites) %>% distinct(SSBS,Longitude,Latitude)
+   
+   ## spatial points
+   
+   site_coords <- st_as_sf(SpatialPoints(sp_sites[,c("Longitude","Latitude")], proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs")))
+   
+   ## if the site overlaps with the species range code as 1 else 0
+    
+   environmental_probabilities[site_find(sp),sp] <- ifelse(st_intersects(sp_shape,site_coords, sparse = FALSE )[1,],1,0)
+  
+   
+   sf_use_s2(TRUE)
+  #skip
+   
+  next()
+    }
+    
+    ###########################
+    ################ SCENAIO 2
+    ###########################
+    
+    # if the species wasn't do be dropped and there was a single species it could translate to then just point to that species file in the
+    # folder
+    
+    if(!res_dat$DROP & res_dat$potential_species != "Mean"){
+      
+      # extract the file name
+      
+      sp_file <- grep(list.files("../../Datasets/Bird_SDM_Projections_Probability/", full.names = TRUE), pattern = paste(gsub(res_dat$potential_species, pattern = " ", replacement = "_"),".rds", sep = ""), value = TRUE,ignore.case = FALSE)
+    
+      } 
+    
+    ###########################
+    ################ SCENAIO 3
+    ###########################
+    
+    ###### if it is the mean species then get the sister species from the crosswalk and those that SDM data is available.
+    
+    else {
+      
+      split_sp <- crosswalk %>% dplyr::filter(BirdLife.name == sp) %>% pull(Jetz.name)
+      split_sp <- crosswalk %>% dplyr::filter(Jetz.name == split_sp) %>% pull(BirdLife.name)
+      split_sp <- split_sp[which(split_sp %in% sdm_species$Birdlife_Name)]
+      
+      ## find the sites that the original species occurs in the species pools
+      
+       sp_sites <- site_find(sp)
+       
+       ## for each of those sites
+       
+      
+     
+         #get coords
+         
+   s_coords <- coords %>% dplyr::filter(SSBS %in% sp_sites) %>% dplyr::select(-SSBS) %>% SpatialPoints(proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs")) %>% st_as_sf() %>% st_transform(crs = "+proj=cea +lat_ts=30")
+   
+     # empty vector for probability of presence vals
+     
+     mean_vals <-c()
+     
+     # for each species 
+     
+     for(j in 1:length(split_sp)){
+       
+       # load the map
+       
+       sp_file <- grep(list.files("../../Datasets/Bird_SDM_Projections_Probability/", full.names = TRUE), pattern = paste(gsub(split_sp[j], pattern = " ", replacement = "_"),".rds", sep = ""), value = TRUE,ignore.case = FALSE)
+       
+      data <- readRDS(sp_file)
+  
+      # make raster
+      
+      sp_ras <- rasterFromXYZ(xyz = data[,c("lon","lat","current")], crs ="+proj=cea +lat_ts=30") 
+       
+      # extract probability of presence 
+      
+      val <- matrix(extract(x = sp_ras, y = s_coords),ncol = 1)
+      
+      # join mean to vector 
+      
+      mean_vals <- cbind(mean_vals,val)
+     }
+     
+     means <- rowMeans(mean_vals, na.rm = TRUE)
+     
+     environmental_probabilities[sp_sites,sp] <- means
+     
+        
+   
+      next()
+    }
+  } else {
+  
+  sp_file <- grep(list.files("../../Datasets/Bird_SDM_Projections_Probability/", full.names = TRUE), pattern = paste(gsub(sp, pattern = " ", replacement = "_"),".rds", sep = ""), value = TRUE,ignore.case = FALSE)
+  }
+  
+  
+  data <- readRDS(sp_file)
+  
+
+  sp_ras <- rasterFromXYZ(xyz = data[,c("lon","lat","current")], crs ="+proj=cea +lat_ts=30")
+    
+
+
+   sp_sites <- site_find(sp)
+   
+   s_coords <- coords %>% dplyr::filter(SSBS %in% sp_sites) %>% dplyr::select(-SSBS) %>% SpatialPoints(proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs")) %>% st_as_sf() %>% st_transform(crs = "+proj=cea +lat_ts=30")
+     
+     
+   environ_p <- extract(x = sp_ras, y = s_coords)
+    
+     environmental_probabilities[sp_sites,sp] <- extract(x = sp_ras, y = s_coords)
+     
+     ######################
+     ######################
+     ######################
+     
+     
+     if(any(environ_p == 0)){
+       zero_site <- sp_sites[which(environ_p == 0)]
+       
+       sp_poly <- readRDS(grep(species_files, pattern = paste("/",sp,"Birdlife",sep = ""), value = TRUE))
+  
+      ## filter ranges 
+      
+      sp_poly <- sp_poly %>% dplyr::filter(presence %in% c(1,2,3), origin %in% c(1,2,3), seasonal %in% c(1,2,3))
+                       
+                       ##### funny thing with some ranges so need to convert back to type MULTIPOLYGON
+ 
+                       if(any(class(sp_poly$Shape)[1] == "sfc_MULTISURFACE", class(sp_poly$Shape)[1] == "sfc_GEOMETRY")){
+                         for(k in 1:NROW(sp_poly)){
+                           sp_poly$Shape[[k]] <- st_cast(sp_poly$Shape[[k]], "MULTIPOLYGON")
+                         }
+                       }
+ 
+      #combine
+
+  sp_shape <- st_combine(sp_poly$Shape)
+  
+  ## give crs
+  
+  st_crs(sp_shape) <- "+proj=longlat +datum=WGS84 +no_defs"
+  
+  ## what sites does this species turn up in the species pool 
+                                
+                                 if(!st_is_valid(sp_shape)){
+                                   sf_use_s2(FALSE)
+                                 }
+       
+  
+  sp_sites <- PREDICTS %>% dplyr::filter(SSBS %in% zero_site) %>% distinct(SSBS,Longitude,Latitude)
+   
+   ## spatial points
+   
+   site_coords <- st_as_sf(SpatialPoints(sp_sites[,c("Longitude","Latitude")], proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs")))
+   
+   ## if the site overlaps with the species range code as 1 else 0
+    
+   environmental_probabilities[zero_site,sp] <- ifelse(st_intersects(sp_shape,site_coords, sparse = FALSE )[1,],1,0)
+        
+   
+   sf_use_s2(TRUE)
+     }
+     
+  }
+
+
+
+write_rds(environmental_probabilities, file = "Outputs/sp_environmental_probabilities.rds")
+  
+```
+
+
