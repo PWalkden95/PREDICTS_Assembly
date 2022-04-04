@@ -16,12 +16,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Hypervolume Analyses
 
-## This is a test 
-
-```{r test}
-print("hello")
-```
-
 Following generating the species pool and performing randomisations it's time to look at how the occupancy of functional trait space as described by the TPD functions is distributed within each land-use and how the structure of this trait space differs across land-use types and compared to null communities.
 
 The structure of functional trait space characterized by hypervolumes can be described in a number of ways, as well as the typical metrics of Functional richness, divergence and evenness, a measure of "holeyness" can be determined. Holeyness within hypervolumes indicates empty functional space and potentially an unoccupied niche as a result of extinctions or trait combinations that are unfeasible in an environmental context.[REF x 2]
