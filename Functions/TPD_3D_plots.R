@@ -21,6 +21,22 @@ require(Hmisc)
 require(magick)
 library(webshot2)
 
+TPD_colours <- readRDS("Functions/TPD_colours.rds")
+
+
+find_position <- function(x,y){
+  
+  value <- which(x > y)
+  
+  if(is_empty(value)){
+    value <- 1
+  } else {
+  value <- value[length(value)]
+  }
+  
+  return(value)   
+}
+
 options(rgl.printRglwidget = TRUE)
 
 ## loading in our TPDs and PREDICTS database -- PREDICTS will be used to get the site land-use classifications for sites that can be combined within study
@@ -124,6 +140,7 @@ TPD_plot_data <- function(data, site) {
 
 
 
+
 ################ examle of how to use the data and how to represent the three trait axes in 3 2D plots
 
 # plot_data <- TPD_plot_data(data = PREDICTS_tpds,site)
@@ -176,6 +193,8 @@ TPD_3d_plot <-
         data_3d[["pl_dat"]] %>% dplyr::group_by(T2, T1, T3) %>%
         dplyr::mutate(prob = ifelse(prob == 0, NA, prob)) %>% filter(!is.na(prob)) %>% data.frame()
       
+      
+      
       filled_cells <- percentile_cells(filled_cells)
       
       if (method == "prob") {
@@ -196,15 +215,20 @@ TPD_3d_plot <-
       z <- filled_cells$T3
       
       
+      
+      
+      
       #creates a function my.colors which interpolates n colors between blue, white and red
       color.df <-
-        data.frame(value = filled_cells$value[order(filled_cells$value)], color.name =
-                     my.colors(length(filled_cells$value))) %>% distinct(value, .keep_all = TRUE)#generates 2001 colors from the color ramp
-      filled_cells_col <-
-        filled_cells %>% dplyr::left_join(color.df, by = "value")
+        data.frame(value = TPD_colours[order(TPD_colours)], color.name =
+                     my.colors(length(TPD_colours))) %>% distinct(value, .keep_all = TRUE)#generates 2001 colors from the color ramp
+     
       
+      filled_cells_col <- filled_cells %>% 
+        dplyr::mutate(color.name = color.df$color.name[unlist(lapply(filled_cells$value,find_position, y = color.df$value))])
       
-      
+
+  
       
       #####################################
       

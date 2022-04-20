@@ -34,12 +34,12 @@ require(tidyverse)
  
  
  realm_land_uses <- list()
- realm_land_uses[["Afrotropic"]] <- c("Primary vegetation", "Secondary vegetation","Plantation forest","Cropland","Pasture","Urban","Intensive agriculture","Minimal agriculture")
- realm_land_uses[["Australasia"]] <- c("Primary vegetation", "Secondary vegetation", "Pasture","Urban","Intensive agriculture","Minimal agriculture")
- realm_land_uses[["Indo-Malay"]] <- c("Primary vegetation","Secondary vegetation","Plantation forest","Cropland","Minimal agriculture")
- realm_land_uses[["Nearctic"]] <- c("Primary vegetation", "Pasture","Cropland", "Urban","Intensive agriculture","Minimal agriculture")
- realm_land_uses[["Neotropic"]] <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban","Intensive agriculture","Minimal agriculture")
- realm_land_uses[["Palearctic"]] <- c("Primary vegetation","Secondary vegetation", "Plantation forest","Cropland","Urban","Intensive agriculture","Minimal agriculture") 
+ realm_land_uses[["Afrotropic"]] <- c("Primary vegetation", "Secondary vegetation","Plantation forest","Cropland","Pasture","Urban")
+ realm_land_uses[["Australasia"]] <- c("Primary vegetation", "Secondary vegetation", "Pasture","Urban","Intensive agriculture")
+ realm_land_uses[["Indo-Malay"]] <- c("Primary vegetation","Secondary vegetation","Plantation forest","Cropland")
+ realm_land_uses[["Nearctic"]] <- c("Primary vegetation", "Pasture","Cropland", "Urban")
+ realm_land_uses[["Neotropic"]] <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban")
+ realm_land_uses[["Palearctic"]] <- c("Primary vegetation","Secondary vegetation", "Plantation forest","Cropland","Urban") 
  
  source("Functions/TPD_3D_plots.R") 
 
@@ -52,12 +52,15 @@ require(tidyverse)
   
  
 
-  
-  dir.create("Outputs/TPD_3D_Plots")
+
+
+     dir.create("Outputs/TPD_3D_Plots")
   
   TPD_for_mapping_data <- list()
   TPD_for_mapping_data_random <- list()
  
+  cumulative_legend_data <- c()
+  
   for(r in realms){
     dir.create(paste("Outputs/TPD_3D_Plots",r, sep = "/"))
     dir.create(paste("Outputs/TPD_3D_Plots",r,"land_uses" ,sep = "/"))
@@ -73,23 +76,50 @@ require(tidyverse)
       sites_lu <- TPD_LU %>% dplyr::filter(Predominant_habitat == LU, Realm == r) %>% dplyr::distinct(SSBS) %>% pull()
     }
     
-  
+  print(paste(r,LU))
     
   if(length(sites_lu) > 0){
     
-   TPD_3d_plot(data = PREDICTS_tpds, sites = sites_lu, T1lab = "Locomotion", T2lab = "Foraging", T3lab = "Body", method = "prob",
-                save = TRUE, file = paste("Outputs/TPD_3D_Plots/",r,"/land_uses/",LU,"_TPD_plot.png",sep = ""),title = "",  grid = FALSE, free_limits = TRUE)
+    site_data <- TPD_plot_data(data = PREDICTS_tpds,sites_lu)
+    legend_data <- site_data[["pl_dat"]][["prob"]]
+    legend_data <- legend_data[legend_data > 0]
+    cumulative_legend_data <- c(cumulative_legend_data,legend_data)
     
-     tpd_for_dat <- TPD_forage_mapping_data(data = PREDICTS_tpds, randata = PREDICTS_randomisations, for_data = Forage, sites = sites_lu)
+    
+   TPD_3d_plot(data = PREDICTS_tpds, sites = sites_lu, T1lab = "Locomotion", T2lab = "Foraging", T3lab = "Body", method = "prob",
+               save = TRUE, file = paste("Outputs/TPD_3D_Plots/",r,"/land_uses/",LU,"_TPD_plot.png",sep = ""),title = "",  grid = FALSE, free_limits = FALSE)
+    
+    # tpd_for_dat <- TPD_forage_mapping_data(data = PREDICTS_tpds, randata = PREDICTS_randomisations, for_data = Forage, sites = sites_lu)
      
-    TPD_for_mapping_data[[r]][[LU]] <- tpd_for_dat$observed
-    TPD_for_mapping_data_random[[r]][[LU]] <- tpd_for_dat$random
+   # TPD_for_mapping_data[[r]][[LU]] <- tpd_for_dat$observed
+  #  TPD_for_mapping_data_random[[r]][[LU]] <- tpd_for_dat$random
+    
     
 }
   }    
   }
   
+  
+  # colours for TPD_plots
+  legend_col <- c()
+for(i in seq(0,1,0.0002)){
+  colour <- as.numeric(quantile(cumulative_legend_data,i))
+  legend_col <- c(legend_col,colour)
 
+  }
+    
+  write_rds(legend_col, file = "Functions/TPD_colours.rds")
+  
+    find_position <- function(x,y){
+  
+    value <- which(x > y)
+    value <- value[length(value)]
+    
+    return(value)   
+  }
+  
+
+  
   write_rds(file = "Outputs/TPD_forage_mapping.rds", TPD_for_mapping_data)
   write_rds(file = "Outputs/TPD_forage_mapping_random.rds", TPD_for_mapping_data_random)
   
