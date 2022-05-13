@@ -467,8 +467,8 @@ mix_model_boot <-
         trim_col <- bootstraps[, col]
         
         trim_col <-
-          trim_col[trim_col > as.numeric(quantile(bootstraps[, col], 0.025)) &
-                     trim_col < as.numeric(quantile(bootstraps[, col], 0.975))]
+          trim_col[trim_col > as.numeric(quantile(bootstraps[, col], 0)) &
+                     trim_col < as.numeric(quantile(bootstraps[, col], 1))]
         
         
         ninety_five_boot <- cbind(ninety_five_boot, trim_col)
@@ -691,6 +691,9 @@ mix_model_boots <-
     transformation = c("log", "none", "none"),
     newdata = pred_mod
   )
+
+
+
 
 mix_boot_plot_FD(mix_model_boots)
 

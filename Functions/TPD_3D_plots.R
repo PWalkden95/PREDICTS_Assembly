@@ -21,7 +21,7 @@ require(Hmisc)
 require(magick)
 library(webshot2)
 
-TPD_colours <- readRDS("Functions/TPD_colours.rds")
+TPD_colours <- readRDS("../Functions/TPD_colours.rds")
 
 
 find_position <- function(x,y){
