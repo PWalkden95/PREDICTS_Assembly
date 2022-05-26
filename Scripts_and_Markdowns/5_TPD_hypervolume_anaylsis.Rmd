@@ -92,6 +92,8 @@ species_pools <-
   readRDS("../Outputs/predicts_sites_species_pools.rds")
 
 
+
+
 ```
 
 # site distribution
@@ -302,7 +304,7 @@ plot_data$Land_use <-
     )
   )
 plot_data$Realm <- factor(plot_data$Realm)
-plot_data$Realm <- relevel(plot_data$Realm, ref = "Neotropic")
+plot_data$Realm <- relevel(plot_data$Realm, ref = "Australasia")
 
 
 
@@ -315,11 +317,11 @@ hist(plot_data$FDis)
 
 hist(plot_data$FEve)
 
-
+hist(car::logit(plot_data$FDis))
 
 mod_rich <-
-  lmer(log(FRich) ~ Land_use + Realm + (1 | SS) , data = plot_data)
-mod_dis <- lmer(FDis ~ Land_use * Realm + (1 | SS) , data = plot_data)
+  lmer(log(FRich) ~ Land_use  + (1 | SS) , data = plot_data)
+mod_dis <- lmer(car::logit(FDis) ~ Land_use * Realm + (1 | SS) , data = plot_data)
 mod_eve <- lmer(FEve ~ Land_use * Realm + (1 | SS) , data = plot_data)
 
 ```
@@ -337,6 +339,8 @@ ggResidpanel::resid_panel(mod_dis)
 
 test <-
   lsmeans(mod_dis, pairwise ~ Land_use * Realm, adjust = "tukey")
+
+
 
 
 hehe <- summary(test)[["contrasts"]]
@@ -688,7 +692,7 @@ mix_boot_plot_FD <- function(boot_data) {
 mix_model_boots <-
   mix_model_boot(
     model = list(mod_rich, mod_dis, mod_eve),
-    transformation = c("log", "none", "none"),
+    transformation = c("log", "logit", "none"),
     newdata = pred_mod
   )
 

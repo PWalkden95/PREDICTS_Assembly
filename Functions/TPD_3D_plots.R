@@ -1,4 +1,15 @@
 
+markdown_rds_open <- function(path) {
+  open_file <- try(readRDS(path))
+  
+  if (class(open_file) == "try-error") {
+    open_file <- readRDS(paste("../", path, sep = ""))
+  }
+  
+  return(open_file)
+  
+}
+
 
 ########################################
 ###### TPD 3D PLOT SCRIPT ##############
@@ -21,7 +32,7 @@ require(Hmisc)
 require(magick)
 library(webshot2)
 
-TPD_colours <- readRDS("../Functions/TPD_colours.rds")
+TPD_colours <- markdown_rds_open("Functions/TPD_colours.rds")
 
 
 find_position <- function(x,y){
@@ -162,6 +173,13 @@ TPD_plot_data <- function(data, site) {
 # Now try to represent the TPD in three dimensions
 # constructing this plot comes in a number of stages and requires the use of the rgl package
 
+hypervolume_occupied_cells <- function(data){
+  occupied_cells <- data %>% dplyr::group_by(T1,T2,T3) %>%
+    dplyr::mutate(prob = ifelse(prob == 0, NA, prob)) %>% dplyr::filter(!is.na(prob)) %>% data.frame
+  
+  return(occupied_cells)
+}
+
 
 TPD_3d_plot <-
   function(data,
@@ -173,14 +191,13 @@ TPD_3d_plot <-
            title = "",
            save = FALSE,
            file,
-           xyz = NULL,
-           xyz_col = NULL,
            limits = limits,
            scale = scale,
            grid = FALSE,
            free_limits = FALSE) {
-    if (is.null(xyz)) {
-      if (!all(sites %in% names(data))) {
+    
+    
+      if(!all(sites %in% names(data))) {
         sites <- sites[which(sites %in% names(data))]
       }
       
@@ -189,13 +206,9 @@ TPD_3d_plot <-
       
       # first identify which cells in 3D space are occupied
       
-      filled_cells <-
-        data_3d[["pl_dat"]] %>% dplyr::group_by(T2, T1, T3) %>%
-        dplyr::mutate(prob = ifelse(prob == 0, NA, prob)) %>% filter(!is.na(prob)) %>% data.frame()
+      filled_cells <- hypervolume_occupied_cells(data_3d[["pl_dat"]]) %>% percentile_cells()
       
       
-      
-      filled_cells <- percentile_cells(filled_cells)
       
       if (method == "prob") {
         filled_cells <- filled_cells %>% dplyr::rename(value = prob)
@@ -353,12 +366,6 @@ TPD_3d_plot <-
         
         T23_col_mat <- as.character(T23_col_mat)
       }
-    } else {
-      x <- xyz[, 2]
-      y <- xyz[, 1]
-      z <- xyz[, 3]
-      
-    }
     #######################################
     ###################################
     
@@ -406,11 +413,8 @@ TPD_3d_plot <-
     
     
     
-    if (!is.null(xyz)) {
-      tpd_col <- xyz_col
-    } else {
       tpd_col <- filled_cells_col[, "color.name"]
-    }
+    
     
     
     clear3d()
@@ -435,7 +439,7 @@ TPD_3d_plot <-
       lwd = 0.1
     )
     
-    if (is.null(xyz) & grid) {
+    if (grid) {
       surface3d(
         x = unique(data_3d[["T21_dat"]]$T1),
         y = unique(data_3d[["T21_dat"]]$T2),
@@ -1578,12 +1582,19 @@ TPD_ranDiff_plot <-
   }
 
 
+##############################################################
+##############################################################
+##############################################################
+
+
 
 Calc_FRich <-
   function(data,
            sites = NULL,
            sites1 = NULL,
            sites2 = NULL) {
+    
+    
     if (!is.null(data[["data"]])) {
       cell_volume <- data[["data"]][["cell_volume"]]
     }
