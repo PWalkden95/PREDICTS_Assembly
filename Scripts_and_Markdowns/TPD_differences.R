@@ -28,7 +28,7 @@ markdown_rds_open <- function(path) {
 
 realms_land_use_sites <- function(realm, land_use) {
   return(
-    TPD_LU %>% dplyr::filter(Predominant_habitat == land_use, Realm == r) %>% dplyr::distinct(SSBS) %>% pull()
+    TPD_LU %>% dplyr::filter(Predominant_habitat == land_use, Realm == realm) %>% dplyr::distinct(SSBS) %>% pull()
   )
 }
 
@@ -301,22 +301,22 @@ write_rds(legend_col, file = "Functions/TPD_colours.rds")
 ## create a function for our realm land use loop
 
 plotting_TPD <- function(realm, land_use) {
-  sites <- realms_land_use_sites(realm = realm, LU = land_use)
+  sites <- realms_land_use_sites(realm = realm, land_use =  land_use)
   
   
   TPD_3d_plot(
     data = PREDICTS_tpds,
     sites = sites,
-    T1lab = "Locomotion",
-    T2lab = "Foraging",
-    T3lab = "Body",
+    ylab = "Locomotion",
+    xlab = "Foraging",
+    zlab = "Body",
     method = "prob",
     save = TRUE,
     file = paste(
       "Outputs/TPD_3D_Plots/",
-      r,
+      realm,
       "/land_uses/",
-      LU,
+      land_use,
       "_TPD_plot.png",
       sep = ""
     ),
@@ -333,7 +333,7 @@ realm_land_use_loop(plotting_TPD)
 
 
 mapping_dietary_guild_function <- function(realm, land_use) {
-  sites <- realms_land_use_sites(realm = realm, LU = land_use)
+  sites <- realms_land_use_sites(realm = realm, land_use = land_use)
   
   tpd_for_dat <-
     TPD_forage_mapping_data(
