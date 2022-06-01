@@ -216,9 +216,9 @@ pri_afro <-
 TPD_3d_plot(
   data = PREDICTS_tpds,
   sites = pri_afro,
-  T1lab = "Locomotion",
-  T2lab = "Foraging",
-  T3lab = "Body",
+  ylab = "Locomotion",
+  xlab = "Foraging",
+  zlab = "Body",
   method = "prob",
   title = "TPD_test_plot"
 )

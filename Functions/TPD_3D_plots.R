@@ -498,42 +498,74 @@ TPD_3d_plot <-
 ##############################################################
 ##############################################################
 
+data <- PREDICTS_tpds_site_ranges
+sites <- TPD_LU %>% dplyr::filter(Predominant_habitat == "Primary vegetation", Realm == "Afrotropic") %>% dplyr::distinct(SSBS) %>% pull()
+
+
+################################################
+
+site_data_functional_metrics <- function(data, sites){
+  
+  if (!is.null(data[["data"]])) {
+    cell_volume <- data[["data"]][["cell_volume"]]
+  }
+  
+  
+  site_data <- data[c(sites)]
+  
+  if (!is.null(data[["data"]])) {
+    sites_data <- TPD_plot_data(data, sites)
+    site_data$total_sites$TPDc$RelativeAbundance <-
+      sites_data[["pl_dat"]][["prob"]]
+  }
+  
+  
+  return(site_data)
+  
+}
+
+
+############################################
+
+volume_evaluation_extract <- function(data, extract = c("cell_volume","evaluation_grid")){
+  
+  
+  if("cell_volume" %in% extract){
+  value <- data[["data"]][["cell_volume"]]
+    }
+  
+  if("evaluation_grid" %in% extract){
+    value <- data[["data"]][["evaluation_grid"]]
+    
+  }
+  
+  return(value)
+  
+}
+
+
+##########################################
+
 
 
 Calc_FRich <-
   function(data,
-           sites = NULL,
-           sites1 = NULL,
-           sites2 = NULL) {
+           sites = NULL
+           ) {
     
+  if(!is.null(data[["data"]])){  
+  cell_volume <- volume_evaluation_extract(data = data, extract = "cell_volume")    
+  }  
+  
+  
+ site_data <- site_data_functional_metrics(data = data, sites = sites)
     
-    if (!is.null(data[["data"]])) {
-      cell_volume <- data[["data"]][["cell_volume"]]
-    }
-    
-    if (!is.null(sites1) & !is.null(sites2)) {
-      sites1_data <- TPD_plot_data(data, sites1)
-      sites2_data <- TPD_plot_data(data, sites2)
-      
-      site_data <- data[c(sites1, sites2)]
-      site_data$sites1$TPDc$RelativeAbundance <-
-        sites1_data[["pl_dat"]][["prob"]]
-      site_data$sites2$TPDc$RelativeAbundance <-
-        sites2_data[["pl_dat"]][["prob"]]
-    } else {
-      site_data <- data[c(sites)]
-      if (!is.null(data[["data"]])) {
-        sites_data <- TPD_plot_data(data, sites)
-        site_data$total_sites$TPDc$RelativeAbundance <-
-          sites_data[["pl_dat"]][["prob"]]
-      }
-      
-    }
     
     
     FRich <- data.frame(SSBS = names(site_data), FRich = NA)
     j <- 1
     for (i in 1:length(site_data)) {
+      
       if (is.null(data[["data"]])) {
         cell_volume <- data[[i]][["data"]][["cell_volume"]]
       }
@@ -558,26 +590,12 @@ Calc_FRich <-
 ####### Functional Evenness calc
 Calc_FEve <-
   function(data,
-           sites = NULL,
-           sites1 = NULL,
-           sites2 = NULL) {
-    if (!is.null(sites1) & !is.null(sites2)) {
-      sites1_data <- TPD_plot_data(data, sites1)
-      sites2_data <- TPD_plot_data(data, sites2)
-      
-      site_data <- data[c(sites1, sites2)]
-      site_data$sites1$TPDc$RelativeAbundance <-
-        sites1_data[["pl_dat"]][["prob"]]
-      site_data$sites2$TPDc$RelativeAbundance <-
-        sites2_data[["pl_dat"]][["prob"]]
-    } else {
-      site_data <- data[c(sites)]
-      if (!is.null(data[["data"]])) {
-        sites_data <- TPD_plot_data(data, sites)
-        site_data$total_sites$TPDc$RelativeAbundance <-
-          sites_data[["pl_dat"]][["prob"]]
-      }
-    }
+           sites = NULL
+           ) {
+    
+    
+      site_data <- site_data_functional_metrics(data = data, sites = sites)
+    
     
     j <- 1
     FEve <- data.frame(SSBS = names(site_data), FEve = NA)
@@ -604,33 +622,18 @@ Calc_FEve <-
 
 Calc_FDiv <-
   function(data,
-           sites = NULL,
-           sites1 = NULL,
-           sites2 = NULL) {
+           sites = NULL) {
+    
+    
     if (!is.null(data[["data"]])) {
-      evaluation_grid <- data$data$evaluation_grid
-      cell_volume <- data$data$cell_volume
+      evaluation_grid <- volume_evaluation_extract(data = data, extract = "evaluation_grid")
+      cell_volume <- volume_evaluation_extract(data = data, extract = "cell_volume")
     }
     
     
-    if (!is.null(sites1) & !is.null(sites2)) {
-      sites1_data <- TPD_plot_data(data, sites1)
-      sites2_data <- TPD_plot_data(data, sites2)
-      
-      site_data <- data[c(sites1, sites2)]
-      site_data$sites1$TPDc$RelativeAbundance <-
-        sites1_data[["pl_dat"]][["prob"]]
-      site_data$sites2$TPDc$RelativeAbundance <-
-        sites2_data[["pl_dat"]][["prob"]]
-    } else {
-      site_data <- data[c(sites)]
-      
-      if (!is.null(data[["data"]])) {
-        sites_data <- TPD_plot_data(data, sites)
-        site_data$total_sites$TPDc$RelativeAbundance <-
-          sites_data[["pl_dat"]][["prob"]]
-      }
-    }
+
+    site_data <- site_data_functional_metrics(data = data, sites = sites)
+    
     
     FDiv <- data.frame(SSBS = names(site_data), FDiv = NA)
     k <- 1
@@ -699,32 +702,18 @@ Calc_FDiv <-
 
 Calc_FDis <-
   function(data,
-           sites = NULL,
-           sites1 = NULL,
-           sites2 = NULL) {
+           sites = NULL) {
+    
     if (!is.null(data[["data"]])) {
-      evaluation_grid <- data$data$evaluation_grid
-      cell_volume <- data$data$cell_volume
+      evaluation_grid <- volume_evaluation_extract(data = data, extract = "evaluation_grid")
+      cell_volume <- volume_evaluation_extract(data = data, extract = "cell_volume")
     }
     
-    if (!is.null(sites1) & !is.null(sites2)) {
-      sites1_data <- TPD_plot_data(data, sites1)
-      sites2_data <- TPD_plot_data(data, sites2)
+
+      site_data <- site_data_functional_metrics(data = data, sites = sites)
       
-      site_data <- data[c(sites1, sites2)]
-      site_data$sites1$TPDc$RelativeAbundance <-
-        sites1_data[["pl_dat"]][["prob"]]
-      site_data$sites2$TPDc$RelativeAbundance <-
-        sites2_data[["pl_dat"]][["prob"]]
-    } else {
-      site_data <- data[c(sites)]
-      
-      if (!is.null(data[["data"]])) {
-        sites_data <- TPD_plot_data(data, sites)
-        site_data$total_sites$TPDc$RelativeAbundance <-
-          sites_data[["pl_dat"]][["prob"]]
-      }
-    }
+
+    
     
     FDis <- data.frame(SSBS = names(site_data), FDis = NA)
     k <- 1
@@ -798,31 +787,16 @@ Calc_FDis <-
 
 Calc_roundness <-
   function(data,
-           sites = NULL,
-           sites1 = NULL,
-           sites2 = NULL) {
+           sites = NULL) {
+    
     if (!is.null(data[["data"]])) {
-      evaluation_grid <- data$data$evaluation_grid
+      evaluation_grid <- volume_evaluation_extract(data = data, extract = "evaluation_grid")
     }
     
-    if (!is.null(sites1) & !is.null(sites2)) {
-      sites1_data <- TPD_plot_data(data, sites1)
-      sites2_data <- TPD_plot_data(data, sites2)
+
+      site_data <- site_data_functional_metrics(data = data,sites = sites)
       
-      site_data <- data[c(sites1, sites2)]
-      site_data$sites1$TPDc$RelativeAbundance <-
-        sites1_data[["pl_dat"]][["prob"]]
-      site_data$sites2$TPDc$RelativeAbundance <-
-        sites2_data[["pl_dat"]][["prob"]]
-    } else {
-      site_data <- data[c(sites)]
       
-      if (!is.null(data[["data"]])) {
-        sites_data <- TPD_plot_data(data, sites)
-        site_data$total_sites$TPDc$RelativeAbundance <-
-          sites_data[["pl_dat"]][["prob"]]
-      }
-    }
     
     FRound <- data.frame(SSBS = names(site_data), FRound = NA)
     k <- 1
@@ -892,22 +866,14 @@ Calc_roundness <-
 
 TPD_FD_metrics <-
   function(data,
-           sites = NULL,
-           sites1 = NULL,
-           sites2 = NULL) {
-    if (!is.null(sites1) & !is.null(sites2)) {
-      FRich <- Calc_FRich(data, sites1, sites2)
-      FEve <- Calc_FEve(data, sites1, sites2)
-      FDiv <- Calc_FDiv(data, sites1, sites2)
-      FRound <- Calc_roundness(data, sites1, sites2)
-      FDis <- Calc_FDis(data, sites1, sites2)
-    } else {
+           sites = NULL) {
+    
       FRich <- Calc_FRich(data, sites)
       FEve <- Calc_FEve(data, sites)
       FDiv <- Calc_FDiv(data, sites)
       FRound <- Calc_roundness(data, sites)
       FDis <- Calc_FDis(data, sites)
-    }
+    
     
     
     FD_metrics <- FRich %>% dplyr::left_join(FEve, by = "SSBS") %>%
@@ -927,6 +893,7 @@ obj_2_string <- function(x) {
   str <- deparse(substitute(x))
   return(str)
 }
+
 
 
 Calc_dissim <- function(data, sites1, sites2) {
