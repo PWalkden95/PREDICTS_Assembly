@@ -1,0 +1,17 @@
+03:29:09:823 [WARN]	WGudeRequest::applyAutoDetectProxyAutoConfigSettings Failed to autodetect proxy settings. The operation completed successfully.
+, last error code = 0 
+07:10:46:943 [WARN]	WGudeRequest::applyAutoDetectProxyAutoConfigSettings Failed to autodetect proxy settings. The operation completed successfully.
+, last error code = 0 
+07:10:47:335 [WARN]	Request Failed. ErrorCode: 112007 errorMessage: Platform Status, Send Request Failed. WinHTTP Name Not Resolved. last error code = 12007 
+14:20:05:104 [WARN]	WGudeRequest::applyAutoDetectProxyAutoConfigSettings Failed to autodetect proxy settings. The operation completed successfully.
+, last error code = 0 
+17:27:31:744 [WARN]	WGudeRequest::applyAutoDetectProxyAutoConfigSettings Failed to autodetect proxy settings. The operation completed successfully.
+, last error code = 0 
+17:27:32:404 [WARN]	WGudeRequest::applyAutoDetectProxyAutoConfigSettings Failed to autodetect proxy settings. The operation completed successfully.
+, last error code = 0 
+22:30:51:099 [WARN]	WGudeRequest::applyAutoDetectProxyAutoConfigSettings Failed to autodetect proxy settings. The operation completed successfully.
+, last error code = 0 
+23:30:51:091 [WARN]	WGudeRequest::applyAutoDetectProxyAutoConfigSettings Failed to autodetect proxy settings. The operation completed successfully.
+, last error code = 0 
+23:30:53:236 [WARN]	WGudeRequest::applyAutoDetectProxyAutoConfigSettings Failed to autodetect proxy settings. The operation completed successfully.
+, last error code = 0 
