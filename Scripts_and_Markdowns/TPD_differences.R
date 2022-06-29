@@ -297,33 +297,31 @@ write_rds(legend_col, file = "Functions/TPD_colours.rds")
 
 
 ##### now with that done we can get to plotting and saving the TPDs
+land_use <- "Cropland"
+realm <- "Neotropic"
 
+
+random_predicts <- readRDS("Outputs/randomisations_TPD_morpho.rds")
 ## create a function for our realm land use loop
-
 plotting_TPD <- function(realm, land_use) {
   sites <- realms_land_use_sites(realm = realm, land_use =  land_use)
   
-  
+ 
   TPD_3d_plot(
     data = PREDICTS_tpds,
-    sites = sites,
+    sites = sites[1],
     ylab = "Locomotion",
     xlab = "Foraging",
     zlab = "Body",
     method = "prob",
-    save = TRUE,
-    file = paste(
-      "Outputs/TPD_3D_Plots/",
-      realm,
-      "/land_uses/",
-      land_use,
-      "_TPD_plot.png",
-      sep = ""
-    ),
+    save = FALSE,
+    animation = TRUE,
+    a_file = "C:/Users/patri/Desktop/Cropland_site",
     title = "",
     grid = FALSE,
     free_limits = FALSE
   )
+  
 }
 
 
@@ -372,6 +370,8 @@ TPD_for_mapping_data_random <-
   markdown_rds_open("Outputs/TPD_forage_mapping_random.rds")
 
 
+test <- TPD_for_mapping_data$Neotropic$`Primary vegetation`
+
 ###########################  have the observed LUR hypervolumes with idetary nichees mapped visualised
 
 
@@ -386,27 +386,11 @@ observed_foraging_plot <- function(realm, land_use) {
     T2lab = "",
     T3lab = "",
     title = "",
-    save = TRUE,
-    s_file = paste(
-      "Outputs/TPD_3D_Plots/",
-      r,
-      "/foraging_guilds_mapped/",
-      "observed/",
-      LU,
-      "_TPD_plot.png",
-      sep = ""
-    ),
+    save = FALSE,
     animation = TRUE,
-    a_file = paste(
-      "Outputs/TPD_3D_Plots/",
-      r,
-      "/foraging_guilds_mapped/",
-      "observed/",
-      LU,
-      "_TPD_animation",
-      sep = ""
+    a_file = "C:/Users/patri/Desktop/test_foraging"
     )
-  )
+  
 }
 
 

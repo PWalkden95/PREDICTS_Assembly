@@ -705,7 +705,37 @@ mix_boot_plot_FD(mix_model_boots)
 
 ```{r site level beta diversity}
 
+require(geosphere)
+require(lme4)
+
+
 site_level_beta <- readRDS("../Outputs/sites_tpd_beta_diversity.rds")
+
+
+geographical_distance_function <- function(dataframe){
+  
+  for(i in 1:nrow(dataframe)){
+   print(i)
+     site_one <- dataframe[i,"site1"]
+    site_two <- dataframe[i,"site2"]
+    
+    coords <- PREDICTS_full %>% dplyr::filter(SSBS %in% c(site_one, site_two)) %>% dplyr::distinct(Longitude,Latitude)
+  
+    if(nrow(coords) == 1){
+      dataframe[i,"geographical_distance"] <- 0
+    } else {
+    
+    dataframe[i,"geographical_distance"] <- distHaversine(coords)
+    }
+    }
+  
+  return(dataframe)
+  
+}
+
+
+site_level_beta <-  geographical_distance_function(site_level_beta)
+land_uses <- c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban")
 
 slb_data <- c()
 for (r in realms) {
@@ -733,7 +763,12 @@ for (r in realms) {
 hist(slb_data$beta)
 hist(car::logit(slb_data$beta))
 
+hist(log10(slb_data$geographical_distance))
+
 slb_data$logit_beta <- car::logit(slb_data$beta)
+slb_data$log10_geodist <- log10(slb_data$geographical_distance)
+slb_data[is.infinite(slb_data$log10_geodist),"log10_geodist"] <- 0
+
 
 slb_data$land_use_comp <- factor(slb_data$land_use_comp)
 slb_data$land_use_comp <-
@@ -743,7 +778,7 @@ slb_data$Realm <- factor(slb_data$Realm)
 slb_data$Realm <- relevel(slb_data$Realm, ref = "Neotropic")
 
 beta_mod <-
-  lmer(logit_beta ~ land_use_comp * Realm + (1 | SS), data = slb_data)
+  lmer(logit_beta ~ land_use_comp * Realm + log10_geodist + land_use_comp:log10_geodist + (1 | SS), data = slb_data)
 
 summary(beta_mod)
 car::Anova(beta_mod)
@@ -766,6 +801,8 @@ pairwise_sig <- summary(test)[["contrasts"]]
 
 beta_newdata <-
   slb_data %>% distinct(Realm, land_use_comp) %>% dplyr::select(Realm, land_use_comp)
+
+beta_newdata$log10_geodist <- 0
 
 beta_boot <-
   mix_model_boot(

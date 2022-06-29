@@ -278,11 +278,13 @@ TPD_3d_plot <-
            method = "prob",
            title = "",
            save = FALSE,
-           file,
+           s_file,
            limits = limits,
            scale = scale,
            grid = FALSE,
-           free_limits = FALSE) {
+           free_limits = FALSE, 
+           animation = FALSE,
+           a_file) {
     
     
       if(!all(sites %in% names(data))) {
@@ -465,9 +467,25 @@ TPD_3d_plot <-
     )
     
     if (save) {
-      rgl.snapshot(file, fmt = 'png')
+      rgl.snapshot(s_file, fmt = 'png')
     }
     
+    if (animation) {
+      movie3d(
+        movie = a_file,
+        spin3d(
+          axis = c(0, 1, 0),
+          rpm = 6,
+          dev = cur3d()
+        ),
+        startTime = 0,
+        duration = 10,
+        dir = ".",
+        type = "gif",
+        clean = T,
+        fps = 10
+      )
+    }
     
     
   }
@@ -497,10 +515,6 @@ TPD_3d_plot <-
 ##############################################################
 ##############################################################
 ##############################################################
-
-data <- PREDICTS_tpds_site_ranges
-sites <- TPD_LU %>% dplyr::filter(Predominant_habitat == "Primary vegetation", Realm == "Afrotropic") %>% dplyr::distinct(SSBS) %>% pull()
-
 
 ################################################
 
@@ -1115,6 +1129,10 @@ TPD_species_occupancy <- function(data, sites1, sites2, randata) {
 #################################################################################
 ## Function to detect holes ###################################################
 
+require(dbscan)
+require(fpc)
+require(factoextra)
+
 
 
 
@@ -1122,23 +1140,21 @@ TPD_holes <-
   function(data = NULL,
            randata = NULL,
            sites,
-           threshold) {
+           threshold, 
+           minimum_points) {
     ### extract the TPD data for teh two sets of sites
     
     TPD_holes_list <- list()
     
     
-    if (is.null(data)) {
-      cellvolume <- randata[[sites]][["data"]][["cell_volume"]]
-    } else {
-      cellvolume <- data[["data"]][["cell_volume"]]
-    }
-    distancecharacteristic <- 1 / (cellvolume ^ (1 / 3))
+    
+    
     
     
     if (!is.null(data)) {
       sites <- sites[which(sites %in% names(data))]
     }
+    
     
     sites <- sites[which(sites %in% names(randata))]
     
@@ -1153,19 +1169,34 @@ TPD_holes <-
       sites2_data <- TPD_plot_data(randata, sites)
       
       
+      if (is.null(data)) {
+        cellvolume <- randata[[sites]][["data"]][["cell_volume"]]
+      } else {
+        cellvolume <- data[["data"]][["cell_volume"]]
+      }
       
+      
+      cell_distance <- data.frame(x = c(abs(unique(sites1_data[["pl_dat"]][["x"]][order(sites1_data[["pl_dat"]][["x"]])])[1] -
+            unique(sites1_data[["pl_dat"]][["x"]][order(sites1_data[["pl_dat"]][["x"]])])[2]),0), 
+      
+      y = c(abs(unique(sites1_data[["pl_dat"]][["z"]][order(sites1_data[["pl_dat"]][["z"]])])[1] -
+            unique(sites1_data[["pl_dat"]][["z"]][order(sites1_data[["pl_dat"]][["z"]])])[2]), 0),
+      
+      z = c(abs(unique(sites1_data[["pl_dat"]][["y"]][order(sites1_data[["pl_dat"]][["y"]])])[1] -
+            unique(sites1_data[["pl_dat"]][["y"]][order(sites1_data[["pl_dat"]][["y"]])])[2]), 0))
+      
+      
+      cell_distance <- dist(cell_distance)[1]/2
       
       ## for the 3D plot need to just get the cells which are functionally occupied
       
       filled_cells_1 <-
-        sites1_data[["pl_dat"]] %>% dplyr::group_by(T2, T1, T3) %>%
-        dplyr::mutate(prob = ifelse(prob == 0, NA, prob)) %>% filter(!is.na(prob)) %>% data.frame()
+        percentile_cells(hypervolume_occupied_cells(data = sites1_data[["pl_dat"]]))
       
-      filled_cells_1 <- percentile_cells(filled_cells_1)
+      
       
       filled_cells_2 <-
-        sites2_data[["pl_dat"]] %>% dplyr::group_by(T2, T1, T3) %>%
-        dplyr::mutate(prob = ifelse(prob == 0, NA, prob)) %>% filter(!is.na(prob)) %>% data.frame()
+        hypervolume_occupied_cells(data = sites2_data[["pl_dat"]])
       
       filled_cells_2 <-
         percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile) %>%
@@ -1193,18 +1224,17 @@ TPD_holes <-
       
       
       filled_cells_1 <-
-        sites1_data %>% dplyr::group_by(T2, T1, T3) %>%
-        dplyr::mutate(prob = ifelse(prob == 0, NA, prob)) %>% filter(!is.na(prob)) %>% data.frame()
+        percentile_cells(hypervolume_occupied_cells(data = sites1_data[["pl_dat"]]))
       
-      filled_cells_1 <- percentile_cells(filled_cells_1)
+      
       
       filled_cells_2 <-
-        sites2_data %>% dplyr::group_by(T2, T1, T3) %>%
-        dplyr::mutate(prob = ifelse(prob == 0, NA, prob)) %>% filter(!is.na(prob)) %>% data.frame()
+        hypervolume_occupied_cells(data = sites2_data[["pl_dat"]])
       
       filled_cells_2 <-
         percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile) %>%
         dplyr::filter(percentile_2 <= threshold)
+      
       
     }
     
@@ -1215,13 +1245,13 @@ TPD_holes <-
     ## join the two data frames together with the secondary sites prob and percentile renamed
     
     diff_cells <-
-      filled_cells_1 %>% dplyr::left_join(filled_cells_2, by = c("T1", "T2", "T3")) %>% data.frame()
+      filled_cells_1 %>% dplyr::left_join(filled_cells_2, by = c("x", "y", "z")) %>% data.frame()
     
     
     ##### work out with difference in prob/percentile of cells and whether the occupancy of the cell is new (functional gain) or lost (functional loss)
     
     cells_frame <-
-      filled_cells_2 %>% dplyr::left_join(filled_cells_1, by = c("T1", "T2", "T3")) %>% dplyr::filter(is.na(prob)) %>%
+      filled_cells_2 %>% dplyr::left_join(filled_cells_1, by = c("x", "y", "z")) %>% dplyr::filter(is.na(prob)) %>%
       dplyr::relocate(prob, .before = prob_2) %>% rbind(diff_cells) %>% dplyr::mutate(
         lost_cell = ifelse(is.na(prob_2), TRUE, FALSE),
         gain_cell = ifelse(is.na(prob), TRUE, FALSE),
@@ -1237,9 +1267,9 @@ TPD_holes <-
     }
     
     cvh <-
-      convhulln(filled_cells_1[, c("T1", "T2", "T3")], options = "FA")
+      convhulln(filled_cells_1[, c("x", "y", "z")], options = "FA")
     cvh_vol <- cvh$vol
-    obs_cvh <- convhulln(filled_cells_1[, c("T1", "T2", "T3")])
+    obs_cvh <- convhulln(filled_cells_1[, c("x", "y", "z")])
     
     
     ########################
@@ -1248,80 +1278,88 @@ TPD_holes <-
     ########################
     
     total_int_cells <-
-      cells_frame[inhulln(obs_cvh, as.matrix(cells_frame[, c("T1", "T2", "T3")])), ]
+      cells_frame[inhulln(obs_cvh, as.matrix(cells_frame[, c("x", "y", "z")])), ]
     
     ###################################
     
     absent_cells <-
-      cells_frame %>% dplyr::filter(gain_cell) %>% dplyr::select(T1, T2, T3)
-    absent_cells$internal <- inhulln(obs_cvh, as.matrix(absent_cells))
-    absent_cells$external <- !absent_cells$internal
+      cells_frame %>% dplyr::filter(gain_cell) %>% dplyr::select(x, y, z, prob_2)
+    absent_cells$internal <- inhulln(obs_cvh, as.matrix(absent_cells[,c(1:3)]))
+ 
     
     abs_int <- absent_cells %>% dplyr::filter(internal)
-    abs_ext <- absent_cells %>% dplyr::filter(external)
+   
     
     if (nrow(abs_int) == 0) {
       return(TPD_holes_list)
     }
     
-    if (nrow(abs_ext) == 0) {
-      return(TPD_holes_list)
-    }
+    
     
     
     if (nrow(abs_int) < 2) {
-      holes_int <- data.frame(abs_int[, c(1:3)], holes = 1)
+      hole_size <-   data.frame(radius = NA,
+                                         number_of_holes = NA,
+                                         total_hole_volume = NA,
+                                         mean_size = NA, 
+                                         max_hole_size = NA, 
+                                         min_hole_size = NA,
+                                         total_proportion = NA,
+                                         mean_proportion = NA,
+                                         max_proportion = NA,
+                                         min_proportion = NA,
+                                         total_absence_proportion = NA )
     } else {
-      clusters_int <- dist(abs_int[, c(1:3)], method = "euclidean") ^ 2
-      tree_int <- fastcluster::hclust(clusters_int, method = "ward.D2")
-      holes_int <-
-        data.frame(abs_int[, c(1:3)], holes = cutree(tree_int, h = distancecharacteristic))
+
+      
+      
+      hole_size <- c()
+      for(i in seq(0,1.5,0.01)){
+      
+      hole_data <- data.frame(cluster = dbscan::dbscan(abs_int[,c(1:3)],eps = i, minPts = minimum_points)[["cluster"]]) %>% 
+        dplyr::group_by(cluster) %>% dplyr::summarise(size = n()) %>% dplyr::mutate(cluster_volume = size * cellvolume, 
+                                                                                    proportion = cluster_volume/ (nrow(total_int_cells)*cellvolume)) %>%
+        dplyr::filter(cluster != 0)
+      
+      if(nrow(hole_data) == 0){
+        next()
+      }
+      
+      h_data <- data.frame(radius = i,
+        number_of_holes = nrow(hole_data),
+        total_hole_volume = sum(hole_data$size) * cellvolume,
+                           mean_size = mean(hole_data$cluster_volume), 
+                           max_hole_size = max(hole_data$cluster_volume), 
+                           min_hole_size = min(hole_data$cluster_volume),
+        total_proportion = sum(hole_data$size) * cellvolume / (nrow(total_int_cells)*cellvolume),
+        mean_proportion = mean(hole_data$proportion),
+        max_proportion = max(hole_data$proportion),
+        min_proportion = min(hole_data$proportion),
+        total_absence_proportion = nrow(abs_int)*cellvolume/(nrow(total_int_cells)*cellvolume) )
+      
+      hole_size <- rbind(hole_size,h_data)
+      
+      
+      
+      }
+      
+   
+      
+     
+      
       
     }
     
-    if (nrow(abs_ext) < 2) {
-      holes_ext <- data.frame(abs_ext[, c(1:3)], holes = 1)
-    } else {
-      clusters_ext <- dist(abs_ext[, c(1:3)], method = "euclidean") ^ 2
-      tree_ext <- fastcluster::hclust(clusters_ext, method = "ward.D2")
-      holes_ext <-
-        data.frame(abs_ext[, c(1:3)], holes = cutree(tree_ext, h = distancecharacteristic))
-      
-    }
     
-    
+
     
     ########
     #######
     #### so some metrics to get from these 1) number of holes 2) mean size of holes 3) proportion of internal volume to holes 4)
-    
-    holes_int_metrics <-
-      holes_int %>% dplyr::group_by(holes) %>% dplyr::summarise(size = n()) %>% ungroup() %>%
-      dplyr::mutate(
-        hole__richness = cellvolume * size,
-        proportion = (cellvolume * size) / (nrow(total_int_cells) * cellvolume)
-      )
-    
-    holes_ext_metrics <-
-      holes_ext %>% dplyr::group_by(holes) %>% dplyr::summarise(size = n()) %>% ungroup() %>%
-      dplyr::mutate(
-        hole__richness = cellvolume * size,
-        proportion = (cellvolume * size) / (nrow(cells_frame) * cellvolume)
-      )
+
     
     TPD_holes_list$internal$internal_hole_cells <- abs_int[, c(1:3)]
-    TPD_holes_list$internal$number_of_holes <- nrow(holes_int_metrics)
-    TPD_holes_list$internal$total_hole_volume <-
-      sum(holes_int_metrics$hole__richness)
-    TPD_holes_list$internal$proportion_holes_volume <-
-      sum(holes_int_metrics$proportion)
-    
-    TPD_holes_list$external$external_hole_cells <- abs_ext[, c(1:3)]
-    TPD_holes_list$external$number_of_holes <- nrow(holes_ext_metrics)
-    TPD_holes_list$external$total_hole_volume <-
-      sum(holes_ext_metrics$hole__richness)
-    TPD_holes_list$external$proportion_holes_volume <-
-      sum(holes_ext_metrics$proportion)
+    TPD_holes_list$internal$metrics_frame <- hole_size
     
     
     return(TPD_holes_list)
@@ -1671,15 +1709,15 @@ TPD_forage_mapping_plot <-
         movie = a_file,
         spin3d(
           axis = c(0, 1, 0),
-          rpm = 10,
+          rpm = 6,
           dev = cur3d()
         ),
         startTime = 0,
-        duration = 12,
+        duration = 10,
         dir = ".",
         type = "gif",
         clean = T,
-        fps = 2
+        fps = 12
       )
     }
     
