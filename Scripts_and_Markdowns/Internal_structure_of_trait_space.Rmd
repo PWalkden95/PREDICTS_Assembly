@@ -1,0 +1,860 @@
+---
+title: "Internal_hypervolume_structure"
+author: "Patrick Alexander Walkden"
+date: '2022-07-12'
+output:
+  html_document:
+    df_print: paged
+---
+
+## Analysis of the impacts of land use on the internal structure of avian functional trait space
+
+This markdown re-visits the hole analysis that was somewhat abandoned in the first pass. The goal was to capture changes in the internal structure of trait spaces, which traditional methods and approaches aren't typically able to do so. To reveal such impacts I aim to detect "hole" within the bounds of a convex hull surrounding the observed hypervolumes. I defined holes in an analougous way to Blonder by encasing the observed hypervolume in an convex hull and then comparing the trait space to a "baseline" condition. Where we differ is that my baseline is defined as a null expectation contingent on the observed hypervolumes regional species pool, as opposed to all unoccupied trait space being considered a "hole". Another difference can be seen in the clustering approach to group empty space into distinct "holes". Blonder uses distance based clustering approaches, which is poor for detecting non-circular holes. I using density based clustering which defines holes based on the number of points within a minimum distance to each point. To accont for the sensitivity of hole detection to this minimum distance I create hole profiles calculating the number of holes and their size as this radius increases. 
+
+Intuitively, one would expect that bird communities in land uses of increasing human influence would display a greater erosion of their internal trait space, but we will see what we capture. 
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load in data, packages and functions
+
+```{r cars}
+
+rm(list = ls())
+
+require(mgcv) ## to perform GAMs
+require(tidyverse) ## for data  wrangling and piping
+
+
+
+source("../Functions/TPD_3D_plots.R") ## my very own TPD functions
+
+
+PREDICTS_tpds <-
+  readRDS("../Outputs/PREDICTS_sites_tpds.rds") # morphometric TPDs of observed sites
+
+PREDICTS_randomisations <-
+  readRDS("../Outputs/randomisations_TPD_morpho.rds") ## morphometric TPD of randomisised sites
+
+
+
+
+PREDICTS_full <- readRDS("../Outputs/refined_predicts.rds")
+
+PREDICTS <- PREDICTS_full %>%  ## PREDICTS data
+  dplyr::distinct(SSBS, Predominant_habitat, Realm, SS,Location) %>% ## pull out land_use type, Subregion, realm etc
+  dplyr::mutate(
+    Predominant_habitat = ifelse(
+      grepl(
+        Predominant_habitat,
+        pattern = "secondary",
+        ignore.case = TRUE
+      ),
+      "Secondary vegetation",
+      paste(Predominant_habitat)
+    )
+  ) %>% data.frame() ## merge all secondary sites together
+
+
+
+TPD_land_uses <-
+  data.frame(SSBS = names(PREDICTS_tpds)) %>% dplyr::left_join(PREDICTS, by = "SSBS") %>% dplyr::filter(Predominant_habitat != "Cannot decide")
+### check a table
+table(TPD_land_uses$Predominant_habitat, TPD_land_uses$Realm)
+
+
+land_uses <-
+  c(
+    "Primary forest",
+    "Primary non-forest",
+    "Secondary vegetation",
+    "Pasture",
+    "Cropland",
+    "Plantation forest",
+    "Urban"
+  )
+realms <-
+  c("Neotropic",
+    "Afrotropic",
+    "Palearctic",
+    "Nearctic",
+    "Indo-Malay",
+    "Australasia")
+
+
+land_use_colours <-
+  data.frame(
+    land_use = land_uses,
+    colours = c(
+      "chartreuse4",
+      "chartreuse2",
+      "olivedrab2",
+      "#EBF787",
+      "#E3D438",
+      "springgreen2",
+      "#718879"
+    )
+  )
+rownames(land_use_colours) <- land_uses
+```
+
+## First things first: calculate the hole statistics
+
+
+This analysis will be based on the Land-Use Realm system hypervolumes to be able to more clearly reveal geomertic patterns, which at the site level is just too noisy and suffers from data limitations.
+
+```{r pressure, echo=FALSE}
+
+
+
+realm_level_hole_frame <- c() # Empty data frame
+
+for (land_use in land_uses) {
+  for (realm in realms) {
+    sites <-
+      TPD_land_uses %>% dplyr::filter(Predominant_habitat == land_use, Realm == realm) %>% dplyr::distinct(SSBS) %>% pull()
+
+    if (is_empty(sites)) {
+      next()
+    }
+
+    LU_holes <-
+      TPD_holes(
+        data = PREDICTS_tpds,
+        randata = PREDICTS_randomisations,
+        sites = sites,
+        threshold = 1,
+        minimum_points = 10
+      )
+
+    hole_data <- LU_holes$internal$metrics_frame
+
+    hole_data$land_use <- land_use
+    hole_data$realm <- realm
+
+
+    realm_level_hole_frame <-
+      rbind(realm_level_hole_frame, hole_data)
+  }
+}
+
+write_rds(file = "../Outputs/realm_level_hole_dbscan_forest.rds", realm_level_hole_frame)
+
+
+realm_level_hole_frame <- readRDS("../Outputs/realm_level_hole_dbscan_forest.rds")
+
+```
+
+
+## Trimming things down a little
+
+Now need to exclude some Land-Use Realm hypervolumes that were too data poor to get reliable measures. Also to facilitate modelling I scale some variables.
+
+
+```{r trimming things down}
+
+
+realm_level_hole_frame$land_use <-
+  factor(
+    realm_level_hole_frame$land_use,
+    levels = c(
+      "Primary forest",
+      "Primary non-forest",
+      "Secondary vegetation",
+      "Plantation forest",
+      "Pasture",
+      "Cropland",
+      "Urban"
+    )
+  )
+
+
+modelling_hole_dataframe <-
+  realm_level_hole_frame[-which(
+    realm_level_hole_frame$land_use == "Urban" &
+      realm_level_hole_frame$realm == "Neotropic" |
+      realm_level_hole_frame$land_use == "Secondary vegetation" &
+      realm_level_hole_frame$realm == "Nearctic" |
+      realm_level_hole_frame$land_use == "Plantation forest" &
+      realm_level_hole_frame$realm == "Nearctic" |
+      realm_level_hole_frame$land_use == "Urban" &
+      realm_level_hole_frame$realm == "Australasia" |
+      realm_level_hole_frame$land_use == "Plantation forest" &
+      realm_level_hole_frame$realm == "Australasia" |
+      realm_level_hole_frame$land_use == "Cropland" &
+      realm_level_hole_frame$realm == "Australasia" |
+      realm_level_hole_frame$land_use == "Pasture" &
+      realm_level_hole_frame$realm == "Indo-Malay" |
+      realm_level_hole_frame$land_use == "Urban" &
+      realm_level_hole_frame$realm == "Indo-Malay" |
+      realm_level_hole_frame$land_use == "Primary non-forest" &
+      realm_level_hole_frame$realm == "Neotropic" |
+      realm_level_hole_frame$land_use == "Primary non-forest" &
+      realm_level_hole_frame$realm == "Palearctic" |
+      realm_level_hole_frame$land_use == "Primary non-forest" &
+      realm_level_hole_frame$realm == "Indo-Malay"  
+  ), ]
+
+
+## Let's have a look at the total hole volume
+
+
+hist(scale(modelling_hole_dataframe$total_hole_volume), breaks = 20)
+
+
+hist(scale(sqrt(modelling_hole_dataframe$total_hole_volume)), breaks = 20)
+
+hist(scale(log(modelling_hole_dataframe$total_hole_volume)), breaks = 20)
+
+### out of these three I think the sqrt transformation is the best 
+
+
+## looks okay let's just scale it to have a standard deviation of 1 and a mean of 0
+
+#modelling_hole_dataframe$total_hole_volume <- scale(sqrt(modelling_hole_dataframe$total_hole_volume))[,1]
+
+
+## the size of the observed hypervolume 
+
+hist(scale(modelling_hole_dataframe$hypervolume_occupancy))
+
+
+## okay maybe could use a transformation
+
+
+hist(scale(log(modelling_hole_dataframe$hypervolume_occupancy)))
+
+
+## log probably looks best 
+
+
+modelling_hole_dataframe$hypervolume_occupancy <- scale(log(modelling_hole_dataframe$hypervolume_occupancy))[,1]
+
+
+source("https://highstat.com/Books/Book2/HighstatLibV10.R")
+
+corvif(modelling_hole_dataframe[,c("total_hole_volume","hypervolume_occupancy","land_use")])
+
+
+## brilliant this shows that there is no multi-colinearity so good to go ahead with the modelling
+
+```
+## Pre-modelling
+
+Before I start modelling I would like to look at what sort of relationship the variables have with each other, for example the radius of hole detection is not likely to have a linear relationship with total hole volume as it will initially increase sharply with radius but then plateau when all unoccupied space is considered to be part of a hole.
+
+So to have a look at this we 
+
+```{r variable relationships}
+
+### relationship between radius and hole volume 
+
+
+radius_hole_volume <- ggplot(data = modelling_hole_dataframe, aes(x = radius, y = total_hole_volume, colour = land_use))+
+  geom_point() +
+  facet_grid(~realm)
+
+
+plot(radius_hole_volume)
+
+
+## right this looks non-linear so looking like we are going to need a non-linear modelling approach I'm thinkin generalised linear models (GAMs)
+
+
+hole_volume_occupancy <- ggplot(data = modelling_hole_dataframe, aes(x = hypervolume_occupancy, y = total_hole_volume, colour = land_use)) +
+  geom_point()
+
+
+plot(hole_volume_occupancy)
+
+
+## Just looking at the top values here the realtionship is looking a lot more linear with increase observed hypervolume size the larger the observed hole may be.
+
+
+```
+## Modelling
+
+
+Considering the relationships between the variables I think the model to explore the influence of land use on the internal structure of avian trait space will take the form of...
+
+
+A generalised additive model (GAM) taking total hole volume as a function of land use, the detection radius of hole as a smoothed variable, observed hypervolume size as a linear variable and the interaction of both with land use.
+
+```{r modelling}
+
+
+hole_volume_gam <- mgcv::gam(
+  total_hole_volume ~ s(radius) +
+    #s(radius, by = land_use) +
+    hypervolume_occupancy +
+    #te(hypervolume_occupancy,radius)+
+    hypervolume_occupancy:land_use  +
+    land_use,
+  data = modelling_hole_dataframe,
+  method = "REML"
+)
+
+
+summary(hole_volume_gam)
+anova(hole_volume_gam)
+
+```
+## Hole volume summary
+
+This model shows that holes are likely to larger is avian trait spaces of bird communities in all other land uses compared to primary vegetation, significantly so in all land uses other than urban. The size of the observed hypervolume and hole detection radius also have significant effects on the total hole volume, unsurprisingly the larger the observed hypervolume and detection radius the larger the holes. Their interactions with land use are also significant. 
+
+Some interesting interactions going on here with urban holes becoming smaller as observed hypervolume size increases, however observed hypervolume size for urban LURs are all typically very small.
+
+But, lets get some visualisations to aid us in the interpretations of the model. first let's have a look at the effect of the hole detection radius on the total hole volume for each land use. To predict the model I have kept the hypervolume occupancy as the median hypervolume occupancy observed across all viable LUR combinations.
+
+
+```{r observing lnad use effects}
+
+land_use_plot <- c()
+
+median_volume <- median(unique(modelling_hole_dataframe$hypervolume_occupancy))
+
+median_radius <- median(unique(modelling_hole_dataframe$radius))
+
+
+
+for(land_use in land_uses){
+  
+    
+
+  data <- data.frame(land_use = land_use, predict(hole_volume_gam, newdata = data.frame(radius = median_radius,
+                                                                                        land_use = land_use,
+                                                                                        hypervolume_occupancy = median_volume), se.fit = TRUE))
+    
+  
+  land_use_plot <- rbind(land_use_plot,data)
+  
+}
+
+
+
+
+land_use_plot$fit <- land_use_plot$fit - land_use_plot[land_use_plot$land_use == "Primary forest", "fit"]
+land_use_plot$lower <- land_use_plot$fit - land_use_plot$se.fit
+land_use_plot$upper <- land_use_plot$fit + land_use_plot$se.fit
+
+land_use_plot$land_use <- factor(land_use_plot$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+
+
+land_use_effect_plot <- ggplot(data = land_use_plot, aes(x = land_use, y = fit, colour = land_use )) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_errorbar(aes(ymin= lower , ymax= upper), colour="black", width=.1, position=position_dodge(0.5), linetype = 1) +
+  geom_point(size = 5)  +
+  theme_classic()
+
+
+plot(land_use_effect_plot)
+
+```
+
+
+
+```{r observing GAM results}
+
+
+gamm_plot_radius <- c()
+
+
+
+for (land_use in land_uses) {
+  
+  
+  land_use_data <-
+    modelling_hole_dataframe[modelling_hole_dataframe$land_use == land_use, "radius"]
+  
+  #hyper_size <- range(unique(realm_level_hole_frame_2[realm_level_hole_frame_2$land_use == land_use, "hypervolume_occupancy"]))
+  #hyper_size <- seq(hyper_size[1],hyper_size[2], length.out = 100)
+  
+  
+  for (i in land_use_data) {
+   #   median_volume <- median(unique(modelling_hole_dataframe[modelling_hole_dataframe$land_use == land_use,"hypervolume_occupancy"]))
+  median_volume <-
+      median(unique(modelling_hole_dataframe$hypervolume_occupancy))
+    
+    
+    data <- data.frame(
+      radius = i,
+      land_use = land_use,
+      predict(
+        hole_volume_gam,
+        newdata = data.frame(
+          radius = i,
+          land_use = land_use,
+          hypervolume_occupancy = median_volume
+        ),
+        se.fit = TRUE
+      )
+    )
+    
+    gamm_plot_radius <- rbind(gamm_plot_radius, data)
+  }
+}
+
+
+gamm_plot_radius$land_use <-
+  factor(
+    gamm_plot_radius$land_use,
+    levels = c(
+      "Primary forest",
+      "Primary non-forest",
+      "Secondary vegetation",
+      "Pasture",
+      "Cropland",
+      "Plantation forest",
+      "Urban"
+    )
+  )
+
+gamm_plot_radius$fit <- gamm_plot_radius$fit
+gamm_plot_radius$se.fit <- gamm_plot_radius$se.fit
+
+gamm_plot_radius$upper <-
+  gamm_plot_radius$fit + gamm_plot_radius$se.fit
+gamm_plot_radius$lower <-
+  gamm_plot_radius$fit - gamm_plot_radius$se.fit
+
+
+
+radius_volume_plot <-
+  ggplot(data = gamm_plot_radius, aes(x = radius, y = fit, group = land_use)) +
+  #geom_point(data = realm_level_radius_data, aes( x = radius, y = mean_hole_volume, colour = land_use), alpha = 0.7, size = 3) +
+  geom_line(size = 1.5,aes(colour = land_use)) +
+  geom_ribbon(aes(
+    ymin = lower,
+    ymax = upper,
+    fill = land_use
+  ),
+  alpha = 0.5, show.legend = FALSE) +
+  scale_colour_manual(values = land_use_colours[as.character(unique(gamm_plot_radius$land_use)), "colours"]) +
+  scale_fill_manual(values = land_use_colours[as.character(unique(gamm_plot_radius$land_use)), "colours"]) +
+  theme(panel.background = element_rect(fill = 'grey', color = 'grey'),
+panel.grid.major = element_line(color = 'grey'),
+panel.grid.minor = element_line(color = 'grey')) +
+  xlab("Radius") +
+  ylab("Total Hole Volume")
+
+
+plot(radius_volume_plot)
+
+```
+
+This plot looks encouraging that at the median observed hypervolume size that compared to primary vegetation all other land uses are predicted to have larger holes at all hole detection radius values. Interestingly again Urban bird communities are predicted to have the second smallest holes at the median hypervolume occupancy, however, this may not be too unexpected as urban Land-Use Realm systems typically have small observed hypervolume sizes that may be susceptible to functional homogenisation and these results may be indicative of that. 
+
+
+To get a clearer view of the interaction between land use and radius, and hypervolume occupancy, here is a animation of how the relationship between radius and predicted hole volume differs with different values of inital observed hypervolume size, lines come in when the occupancy is within the range of observed hypervolume occupancy values. One to note is that Urban sites drop out early due to consistently small occupancy values being observed. However, again primary vegetation maintains the smallest holes compared to other land uses irrespective of the oberved hypervolume size.
+
+
+![my animated GIF](radius_hole_GIF.gif) 
+
+Second visualations will be to show the predictions of hole size with observed hypervolume size. Akin to the other plot I have predicted values iterating through hypervolume size with radius being constant at the median value displayed.
+
+
+```{r}
+
+gamm_plot_hypervolume_occupancy <- c()
+
+
+for (land_use in land_uses) {
+  #land_use_data <- realm_level_hole_frame_2[realm_level_hole_frame_2$land_use == land_use,"radius"]
+  
+  hyper_size <-
+    range(unique(modelling_hole_dataframe[modelling_hole_dataframe$land_use == land_use, "hypervolume_occupancy"]))
+  hyper_size <- seq(hyper_size[1], hyper_size[2], length.out = 100)
+  
+  
+  for (i in hyper_size) {
+    
+    median_radius <-
+      round(median(unique(modelling_hole_dataframe[modelling_hole_dataframe$land_use == land_use, "radius"])), digits = 2)
+    #  mean_volume <- median(unique(realm_level_hole_frame_2$hypervolume_occupancy))
+    #mean_radius <- round(median(unique(realm_level_hole_frame_2$radius)),digits = 2)
+    
+    data <- data.frame(
+      hypervolume_occupancy = i,
+      land_use = land_use,
+      predict(
+        hole_volume_gam,
+        newdata = data.frame(
+          radius = median_radius,
+          land_use = land_use,
+          hypervolume_occupancy = i
+        ),
+        se.fit = TRUE
+      )
+    )
+    
+    gamm_plot_hypervolume_occupancy <-
+      rbind(gamm_plot_hypervolume_occupancy, data)
+  }
+}
+
+
+gamm_plot_hypervolume_occupancy$land_use <-
+  factor(
+    gamm_plot_hypervolume_occupancy$land_use,
+    levels = c(
+      "Primary forest",
+      "Primary non-forest",
+      "Secondary vegetation",
+      "Pasture",
+      "Cropland",
+      "Plantation forest",
+      "Urban"
+    )
+  )
+
+gamm_plot_hypervolume_occupancy$upper <-
+  gamm_plot_hypervolume_occupancy$fit + gamm_plot_hypervolume_occupancy$se.fit
+gamm_plot_hypervolume_occupancy$lower <-
+  gamm_plot_hypervolume_occupancy$fit - gamm_plot_hypervolume_occupancy$se.fit
+
+
+radius_points <- c()
+
+for (land_use in land_uses) {
+  mean_radius <-
+    round(median(unique(modelling_hole_dataframe[modelling_hole_dataframe$land_use == land_use, "radius"])), digits = 2)
+  
+  radius_data <-
+    modelling_hole_dataframe %>% dplyr::mutate(radius = as.character(radius)) %>%
+    dplyr::filter(radius == as.character(median_radius))
+  
+  radius_data <- radius_data[radius_data$land_use == land_use,]
+  
+  radius_points <- rbind(radius_points, radius_data)
+  
+}
+
+
+gamm_plot_hypervolume_occupancy <- gamm_plot_hypervolume_occupancy %>% dplyr::filter(land_use %in% as.character(unique(radius_points$land_use)))
+
+
+
+
+hypervolume_hole_plot <-
+  ggplot(data = gamm_plot_hypervolume_occupancy, aes(x = hypervolume_occupancy, y = fit, group = land_use)) +
+  geom_line(size = 1.5,aes(colour = land_use), show.legend = FALSE) +
+  geom_ribbon(
+    aes(
+      ymin = lower,
+      ymax = upper,
+      fill = land_use
+    ),
+    alpha = 0.6,
+    show.legend = FALSE
+  ) +
+    geom_point(
+    data = radius_points,
+    aes(x = hypervolume_occupancy, y = total_hole_volume, colour = land_use)
+    ,
+    size = 8,
+    alpha = 0.6,
+    show.legend = FALSE
+  ) +
+  scale_colour_manual(values = land_use_colours[as.character(unique(gamm_plot_hypervolume_occupancy$land_use)), "colours"]) +
+  scale_fill_manual(values = land_use_colours[as.character(unique(gamm_plot_hypervolume_occupancy$land_use)), "colours"]) +
+  ylab("Total Hole Volume") +
+  xlab("Hypervolume occupancy") +
+  theme(panel.background = element_rect(fill = 'grey', color = 'grey'),
+        panel.grid.major = element_line(color = 'grey'),
+        panel.grid.minor = element_line(color = 'grey'))# +
+ # ylim(-4,3)+
+#  xlim(-3,2)
+
+
+plot(hypervolume_hole_plot)
+
+
+```
+
+So again similarly to the radius-hole plot compared to primary vegetation that all other land uses are predicted to have larger holes irrespective of the inital hypervolume size. Predictions are limited by the observed hypervolume size of the Land-Use Realm hypervolumes. 
+
+
+Next to observed the plots with varying radius values.
+
+![](../Figures/Animations/occupancy_hole/occupancy_hole_GIF.gif)
+
+Again this shows encouraging results with primary vegetation disaplying consistently smaller holes compared to other land uses.
+
+
+## Number of hole model
+
+Another indication of the erosion of the internal structure of avian functional trait spaces in human-domianted land uses would be the number of holes displayed while again taking into account the inital hypervolume size and radius of hole detection.
+
+
+Again this will be a GAM, but this time with a poisson distribution as we are dealing with count data.
+
+``` {r number of hole GAM}
+
+number_of_holes_model <- mgcv::gam(
+  number_of_holes ~ s(radius) +
+  #  s(radius, by = land_use) +
+    hypervolume_occupancy +
+    hypervolume_occupancy:land_use +
+    #te(hypervolume_occupancy,radius)+
+    # s(hypervolume_occupancy, by = land_use)  +
+    land_use,
+  data = modelling_hole_dataframe,
+  family = "poisson",
+  method = "REML"
+)
+
+
+
+summary(number_of_holes_model)
+anova(number_of_holes_model)
+
+
+```
+
+Then additonally, with the number of holes model, compared to primary vegetation bird communities in other land uses typically have a larger number of holes, usually significantly so. However, with the exception of urban communities. However, there is a significant interaction between observed hypervolume size in the opposite direction, which would suggest that the negative overall effect of urban communities is due to the small observed hypervolume size and that they would possibly exhibit a greater number of holes with larger size. 
+
+```{r visualise land_use effect}
+
+land_use_plot <- c()
+
+median_volume <- median(unique(modelling_hole_dataframe$hypervolume_occupancy))
+
+median_radius <- median(unique(modelling_hole_dataframe$radius))
+
+
+
+for(land_use in land_uses){
+  
+    
+
+  data <- data.frame(land_use = land_use, predict(number_of_holes_model, newdata = data.frame(radius = median_radius,
+                                                                                        land_use = land_use,
+                                                                                        hypervolume_occupancy = median_volume), se.fit = TRUE))
+    
+  
+  land_use_plot <- rbind(land_use_plot,data)
+  
+}
+
+
+land_use_plot$fit <- land_use_plot$fit - land_use_plot[land_use_plot$land_use == "Primary forest", "fit"]
+land_use_plot$lower <- land_use_plot$fit - land_use_plot$se.fit
+land_use_plot$upper <- land_use_plot$fit + land_use_plot$se.fit
+
+land_use_plot$land_use <- factor(land_use_plot$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+
+
+land_use_effect_plot <- ggplot(data = land_use_plot, aes(x = land_use, y = fit, colour = land_use )) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_errorbar(aes(ymin= lower , ymax= upper), colour="black", width=.1, position=position_dodge(0.5), linetype = 1) +
+  geom_point(size = 5)  +
+  theme_classic()
+
+
+plot(land_use_effect_plot)
+
+```  
+
+
+### Grouping land use within study to get over some of the sampling limitations
+
+
+so first things first we will need to group sites by study and land use as opposed to land use and biogeographic realm
+
+
+```{r study land use analysis}
+
+
+study_level_hole_frame <- c() # Empty data frame
+
+
+studies <- unique(TPD_land_uses$SS)
+
+for(study in studies){
+
+for (land_use in land_uses) {
+  
+    sites <-
+      TPD_land_uses %>% dplyr::filter(Predominant_habitat == land_use, SS == study) %>% dplyr::distinct(SSBS) %>% pull()
+
+    if (is_empty(sites)) {
+      next()
+    }
+
+    LU_holes <-
+      TPD_holes(
+        data = PREDICTS_tpds,
+        randata = PREDICTS_randomisations,
+        sites = sites,
+        threshold = 1,
+        minimum_points = 10
+      )
+
+    hole_data <- LU_holes$internal$metrics_frame
+
+    hole_data$land_use <- land_use
+    hole_data$SS <- study
+    hole_data$realm <- TPD_land_uses %>% dplyr::filter(SS == study) %>% distinct(Realm) %>% pull()
+
+
+    study_level_hole_frame <-
+      rbind(study_level_hole_frame, hole_data)
+  }
+
+}
+
+
+write_rds(file = "../Outputs/study_level_hole_dataframe.rds", x = study_level_hole_frame)
+
+
+
+
+```
+
+
+## now that we have land use agregated within studies this facilitates mixed effect modelling 
+
+
+```{r mixed effects of land use within study}
+
+study_level_hole_frame <- readRDS("../Outputs/study_level_hole_dataframe.rds")
+
+
+
+study_level_hole_frame$land_use <- factor(study_level_hole_frame$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+
+
+
+hist(scale(sqrt(study_level_hole_frame$total_hole_volume))[,1])
+hist(scale(log(study_level_hole_frame$total_hole_volume))[,1])
+hist(scale(study_level_hole_frame$total_hole_volume)[,1])
+
+study_level_hole_frame$total_hole_volume <- scale(log(study_level_hole_frame$total_hole_volume))[,1]
+
+
+
+hist(log(study_level_hole_frame$hypervolume_occupancy))
+
+
+study_level_hole_frame$hypervolume_occupancy <- scale(log(study_level_hole_frame$hypervolume_occupancy))[,1]
+
+
+gam <- gamm4::gamm4(total_hole_volume ~ s(radius) + 
+                      #s(radius, by = land_use) +
+                      hypervolume_occupancy + hypervolume_occupancy:land_use +
+                      land_use, random = ~(1|SS), data = study_level_hole_frame, REML = TRUE)
+
+
+
+
+summary(gam$gam)
+anova(gam$gam)
+
+
+
+
+
+land_use_plot <- c()
+
+median_volume <- median(unique(study_level_hole_frame$hypervolume_occupancy))
+
+median_radius <- median(unique(study_level_hole_frame$radius))
+
+
+
+for(land_use in land_uses){
+  
+    
+
+  data <- data.frame(land_use = land_use, predict(gam$gam, newdata = data.frame(radius = median_radius,
+                                                                                        land_use = land_use,
+                                                                                        hypervolume_occupancy = median_volume), se.fit = TRUE, re.form = NA))
+    
+  
+  land_use_plot <- rbind(land_use_plot,data)
+  
+}
+
+
+land_use_plot$fit <- land_use_plot$fit - land_use_plot[land_use_plot$land_use == "Primary forest", "fit"]
+land_use_plot$lower <- land_use_plot$fit - land_use_plot$se.fit
+land_use_plot$upper <- land_use_plot$fit + land_use_plot$se.fit
+
+land_use_plot$land_use <- factor(land_use_plot$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+
+
+land_use_effect_plot <- ggplot(data = land_use_plot, aes(x = land_use, y = fit, colour = land_use )) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_errorbar(aes(ymin= lower , ymax= upper), colour="black", width=.1, position=position_dodge(0.5), linetype = 1) +
+  geom_point(size = 5)  +
+  theme_classic()
+
+
+plot(land_use_effect_plot)
+
+
+```
+
+
+```{r number of holes}
+
+
+gam_2 <- gamm4::gamm4(number_of_holes ~ s(radius) + 
+                     # s(radius, by = land_use) +
+                      hypervolume_occupancy + hypervolume_occupancy:land_use +
+                      land_use, random = ~(1|SS), data = study_level_hole_frame, REML = TRUE, family = "poisson")
+
+
+
+
+summary(gam_2$gam)
+anova(gam_2$gam)
+
+
+
+land_use_plot <- c()
+
+median_volume <- median(unique(study_level_hole_frame$hypervolume_occupancy))
+
+median_radius <- median(unique(study_level_hole_frame$radius))
+
+
+
+for(land_use in land_uses){
+  
+    
+
+  data <- data.frame(land_use = land_use, predict(gam_2$gam, newdata = data.frame(radius = median_radius,
+                                                                                        land_use = land_use,
+                                                                                        hypervolume_occupancy = median_volume), se.fit = TRUE), re.form = NA)
+    
+  
+  land_use_plot <- rbind(land_use_plot,data)
+  
+}
+
+
+land_use_plot$fit <- land_use_plot$fit - land_use_plot[land_use_plot$land_use == "Primary forest", "fit"]
+land_use_plot$lower <- land_use_plot$fit - land_use_plot$se.fit
+land_use_plot$upper <- land_use_plot$fit + land_use_plot$se.fit
+
+land_use_plot$land_use <- factor(land_use_plot$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+
+
+land_use_effect_plot <- ggplot(data = land_use_plot, aes(x = land_use, y = fit, colour = land_use )) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_errorbar(aes(ymin= lower , ymax= upper), colour="black", width=.1, position=position_dodge(0.5), linetype = 1) +
+  geom_point(size = 5)  +
+  theme_classic()
+
+
+plot(land_use_effect_plot)
+
+
+```
+
+

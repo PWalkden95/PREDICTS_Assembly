@@ -107,6 +107,7 @@ TPD_plot_fun <- function(mat) {
 ####################### getting sites of the same land-use type you can just input that as a single vector
 
 
+
 TPD_plot_data <- function(data, site) {
   pl_dat <- matrix(rep(0, (50 ^ 3) * 4), ncol = 4)
   pl_dat[, 1] <- data[["data"]][["evaluation_grid"]][[1]]
@@ -115,7 +116,7 @@ TPD_plot_data <- function(data, site) {
   
   for (sit in site) {
     pl_dat[, 4] <-
-      pl_dat[, 4] + data[[sit]][["TPDc"]][["RelativeAbundance"]]
+      pl_dat[, 4] + data[[sit]][["TPDc"]][[1]]
   }
   
   
@@ -1308,13 +1309,14 @@ TPD_holes <-
                                          mean_proportion = NA,
                                          max_proportion = NA,
                                          min_proportion = NA,
-                                         total_absence_proportion = NA )
+                                         total_absence_proportion = NA,
+                                         hypervolume_occupancy = NA)
     } else {
 
       
       
       hole_size <- c()
-      for(i in seq(0,1.5,0.01)){
+      for(i in seq(0,10,0.01)){
       
       hole_data <- data.frame(cluster = dbscan::dbscan(abs_int[,c(1:3)],eps = i, minPts = minimum_points)[["cluster"]]) %>% 
         dplyr::group_by(cluster) %>% dplyr::summarise(size = n()) %>% dplyr::mutate(cluster_volume = size * cellvolume, 
@@ -1335,11 +1337,14 @@ TPD_holes <-
         mean_proportion = mean(hole_data$proportion),
         max_proportion = max(hole_data$proportion),
         min_proportion = min(hole_data$proportion),
-        total_absence_proportion = nrow(abs_int)*cellvolume/(nrow(total_int_cells)*cellvolume) )
+        total_absence_proportion = nrow(abs_int)*cellvolume/(nrow(total_int_cells)*cellvolume),
+        hypervolume_occupancy = nrow(filled_cells_1) * cellvolume)
       
       hole_size <- rbind(hole_size,h_data)
       
-      
+      if(h_data$total_proportion > (h_data$total_absence_proportion * 0.99) ){
+        break()
+      }
       
       }
       
@@ -1519,7 +1524,7 @@ TPD_forage_mapping_data <-
     # first identify which cells in 3D space are occupied
     
     filled_cells <-
-      data_3d[["pl_dat"]] %>% dplyr::group_by(T2, T1, T3) %>%
+      data_3d[["pl_dat"]] %>% dplyr::group_by(x, y, z) %>%
       dplyr::mutate(prob = ifelse(prob == 0, NA, prob)) %>% filter(!is.na(prob)) %>% data.frame()
     
     
@@ -1527,7 +1532,7 @@ TPD_forage_mapping_data <-
       ran_data_3d <- TPD_plot_data(randata, sites)
       
       ran_filled_cells <-
-        ran_data_3d[["pl_dat"]] %>% dplyr::group_by(T2, T1, T3) %>%
+        ran_data_3d[["pl_dat"]] %>% dplyr::group_by(x, y, z) %>%
         dplyr::mutate(prob = ifelse(prob == 0, NA, prob)) %>% filter(!is.na(prob)) %>% data.frame()
       
       species_tpd <- species_fit(ran_filled_cells)
@@ -1610,7 +1615,7 @@ TPD_forage_mapping_data <-
       TPD_for_map_data$random <- species_tpd
       
       obs_species_tpd <-
-        filled_cells %>% merge(species_tpd, by = c("T1", "T2", "T3"))
+        filled_cells %>% merge(species_tpd, by = c("y", "x", "z"))
       
       TPD_for_map_data$observed <- obs_species_tpd
       
@@ -1647,9 +1652,9 @@ TPD_forage_mapping_plot <-
     }
     
     
-    x <- data$T2
-    y <- data$T1
-    z <- data$T3
+    x <- data$x
+    y <- data$y
+    z <- data$z
     
     
     
@@ -1730,6 +1735,8 @@ TPD_forage_mapping_plot <-
 #### difference areas of trait space are impacted by land use change compared to null expectations
 
 
+
+
 proportional_occupancy <- function(data,
                                    randata,
                                    fordata,
@@ -1759,8 +1766,7 @@ proportional_occupancy <- function(data,
   ransites_data <- TPD_plot_data(randata, sites)
   
   
-  
-  
+  g <- "Fr"
   for (g in guilds) {
     ran_guild_data <- ranfordata %>% dplyr::filter(Trophic_niche == g)
     
@@ -1769,16 +1775,15 @@ proportional_occupancy <- function(data,
       cell <-
         as.numeric(
           which(
-            sites1_data[["pl_dat"]]$T1 == ran_guild_data[i, "T1"] &
-              sites1_data[["pl_dat"]]$T2 == ran_guild_data[i, "T2"] &
-              sites1_data[["pl_dat"]]$T3 == ran_guild_data[i, "T3"]
+            sites1_data[["pl_dat"]]$y == ran_guild_data[i, "y"] &
+              sites1_data[["pl_dat"]]$x == ran_guild_data[i, "x"] &
+              sites1_data[["pl_dat"]]$z == ran_guild_data[i, "z"]
           )
         )
       
       guild_cells <- c(guild_cells, cell)
     }
-    
-    
+      
     TPD_i <- sites1_data[["pl_dat"]][guild_cells, "prob"]
     
     TPD_j <- ransites_data[["pl_dat"]] %>%
@@ -1789,7 +1794,7 @@ proportional_occupancy <- function(data,
       TPD_j <- TPD_j / (sum(TPD_j))
     }
     
-    
+   
     O_aux <- sum(pmin(TPD_i, TPD_j))
     
     results_samp <- data.frame(
@@ -1811,6 +1816,19 @@ proportional_occupancy <- function(data,
 
 reorder_combinations <- function(combo_df) {
   priority_order <- c(
+    "Primary forest/Secondary vegetation",
+    "Primary forest/Primary non-forest",
+    "Primary forest/Plantation forest",
+    "Primary forest/Pasture",
+    "Primary forest/Cropland",
+    "Primary forest/Minimal agriculture",
+    "Primary forest/Intensive agriculture",
+    "Primary forest/Urban",
+    "Primary non-forest/Secondary vegetation",
+    "Primary non-forest/Plantation forest",
+    "Primary non-forest/Pasture",
+    "Primary non-forest/Cropland",
+    "Primary non-forest/Urban",
     "Primary vegetation/Secondary vegetation",
     "Primary vegetation/Plantation forest",
     "Primary vegetation/Pasture",
@@ -1863,7 +1881,6 @@ reorder_combinations <- function(combo_df) {
 ####################################
 # ####################################
 
-
 centre_of_mass_for <-
   function(data, sites = NULL, tpd_for_map, threshold) {
     sites_data <- TPD_plot_data(data, sites)
@@ -1874,11 +1891,11 @@ centre_of_mass_for <-
     
     
     functional_volume <-
-      sites_data[["pl_dat"]] %>% dplyr::group_by(T2, T1, T3) %>%
+      sites_data[["pl_dat"]] %>% dplyr::group_by(x, y, z) %>%
       dplyr::mutate(prob = ifelse(prob == 0, NA, prob))  %>% data.frame() %>% percentile_cells() %>% dplyr::filter(!is.na(percentile))
     
     full_guild_prop <- functional_volume %>%
-      merge(tpd_for_map[, colnames(tpd_for_map) != "prob"], by = c("T1", "T2", "T3")) %>% dplyr::group_by(Trophic_niche) %>%
+      merge(tpd_for_map[, colnames(tpd_for_map) != "prob"], by = c("y", "x", "z")) %>% dplyr::group_by(Trophic_niche) %>%
       dplyr::mutate(
         full_probability = sum(prob),
         n_cells = n(),
@@ -1891,7 +1908,7 @@ centre_of_mass_for <-
     for (i in 1:length(threshold)) {
       percentile_vol <-
         functional_volume %>% dplyr::filter(percentile <= threshold[i]) %>%
-        dplyr::select(T1, T2, T3, prob) %>% dplyr::mutate(percentile = threshold[i])
+        dplyr::select(y, x, z, prob) %>% dplyr::mutate(percentile = threshold[i])
       
       if (nrow(percentile_vol) == 0) {
         next()
@@ -1908,7 +1925,7 @@ centre_of_mass_for <-
       
       
       prop_species <-
-        tpd_for_map[, colnames(tpd_for_map) != "prob"] %>% merge(percentile_vol, by = c("T1", "T2", "T3")) %>%
+        tpd_for_map[, colnames(tpd_for_map) != "prob"] %>% merge(percentile_vol, by = c("y", "x", "z")) %>%
         dplyr::group_by(Trophic_niche) %>%
         dplyr::summarise(n_cells = n()) %>% ungroup() %>% dplyr::mutate(prop_COM = n_cells /
                                                                           sum(n_cells),
@@ -1919,7 +1936,7 @@ centre_of_mass_for <-
         data.frame()
       
       prob_species <-
-        tpd_for_map[, colnames(tpd_for_map) != "prob"] %>% merge(percentile_vol, by = c("T1", "T2", "T3")) %>%
+        tpd_for_map[, colnames(tpd_for_map) != "prob"] %>% merge(percentile_vol, by = c("y", "x", "z")) %>%
         group_by(Trophic_niche) %>%
         dplyr::summarise(prob_COM = sum(prob), percentile = threshold[i]) %>%
         data.frame()
@@ -1960,7 +1977,7 @@ centre_of_mass_for <-
       
       
       COM_point <-
-        c(apply(percentile_vol[, c("T1", "T2", "T3")], 2, weighted.mean, w = weights)) /
+        c(apply(percentile_vol[, c("y", "x", "z")], 2, weighted.mean, w = weights)) /
         sum(weights)
       
       

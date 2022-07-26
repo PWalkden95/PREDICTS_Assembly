@@ -1,8 +1,27 @@
+beta_data <- beta_boot
+realm <- "Neotropic"
 
 
 pairwise_beta_plot <- function(beta_data, realm){
 
-plot_colours <- c(`Primary vegetation_Primary vegetation` = "green4",
+plot_colours <- c(`Primary forest_Primary forest` = "green4",
+                  `Primary forest_Primary_non forest` = "charteuse4",
+                  `Primary forest_Secondary vegetation` = "chartreuse3",
+                  `Primary forest_Plantation forest` = "seagreen3",
+                  `Primary forest_Pasture` = "darkseagreen1",
+                  `Primary forest_Cropland` = "darkolivegreen1",
+                  `Primary forest_Minimal agriculture` = "darkseagreen1",
+                  `Primary forest_Intensive agriculture` = "darkolivegreen1",
+                  `Primary forest_Urban` = "palegreen",
+                  `Primary non-forest_Primary non-forest` = "green4",
+                  `Primary non-forest_Secondary vegetation` = "chartreuse3",
+                  `Primary non-forest_Plantation forest` = "seagreen3",
+                  `Primary non-forest_Pasture` = "darkseagreen1",
+                  `Primary non-forest_Cropland` = "darkolivegreen1",
+                  `Primary non-forest_Minimal agriculture` = "darkseagreen1",
+                  `Primary non-forest_Intensive agriculture` = "darkolivegreen1",
+                  `Primary non-forest_Urban` = "palegreen",
+                  `Primary vegetation_Primary vegetation` = "green4",
                   `Primary vegetation_Secondary vegetation` = "chartreuse3",
                   `Primary vegetation_Plantation forest` = "seagreen3",
                   `Primary vegetation_Pasture` = "darkseagreen1",
@@ -33,7 +52,9 @@ plot_colours <- c(`Primary vegetation_Primary vegetation` = "green4",
                   `Intensive agriculture_Urban` = "brown",
                   Urban_Urban = "ivory4")
 
-shorthand <- c(`Primary vegetation` = "PriVeg",
+shorthand <- c(`Primary forest` = "PriFor",
+               `Primary non-forest` = "PriNFor",
+  `Primary vegetation` = "PriVeg",
                `Secondary vegetation` = "SecVeg",
                `Plantation forest` = "PlnFor",
                `Pasture` = "Pas",
@@ -49,20 +70,22 @@ p_order <- list("1" = c(1),
                 "3" = c(1,2,4,3,5,6),
                 "4" = c(1,2,5,3,6,8,4,7,9,10),
                 "5" = c(1,2,6,3,7,10,4,8,11,13,5,9,12,14,15),
-                "6" = c(1,2,7,3,8,12,4,9,13,16,5,10,14,17,19,6,11,15,18,20,21))
+                "6" = c(1,2,7,3,8,12,4,9,13,16,5,10,14,17,19,6,11,15,18,20,21),
+                "7" = c(1,2,8,3,9,14,4,10,15,19,5,11,16,20,23,6,12,17,21,24,26,7,13,18,22,25,27,28))
 
 s_order <- list("2" = c(2),
                 "3" = c(2,3,5),
                 "4" = c(2,3,4,6,7,9),
                 "5" = c(2,3,4,5,7,8,9,11,12,14),
-                "6" = c(2,3,4,5,6,8,9,10,11,13,14,15,17,18,20))
+                "6" = c(2,3,4,5,6,8,9,10,11,13,14,15,17,18,20),
+                "7" = c(2,3,4,5,6,7,9,10,11,12,13,15,16,17,18,20,21,22,24,25,27))
 
 
 p_dat <- beta_data %>% dplyr::filter(Realm == realm)
 
 
 
-plot_LU <- c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban")
+plot_LU <- c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban")
 
 data_LU <- unique(unlist(str_split(p_dat$Land_use_comp,pattern =  "_")))
 
@@ -90,7 +113,7 @@ plot_lvls <- lvls[p_order[[as.character(length(plot_LU))]]]
 
 level_plots <- list()
 
-pri_median <- median(p_dat %>% dplyr::filter(Land_use_comp == "Primary vegetation_Primary vegetation") %>% pull(value))
+pri_median <- median(p_dat %>% dplyr::filter(Land_use_comp == "Primary forest_Primary forest") %>% pull(value))
 
 
 for(l in plot_lvls){
@@ -157,7 +180,7 @@ contrast_2 <- unlist(str_split(pairwise_sig$contrast, pattern = " - "))[seq(2,nr
 
 
 realm_rows <- which(grepl(contrast_1, pattern = realm) &
-                      grepl(contrast_1, pattern = "Primary vegetation_Primary vegetation") &
+                      grepl(contrast_1, pattern = "Primary forest_Primary forest") &
                       grepl(contrast_2, pattern = realm))
 
 contrast_1 <- contrast_1[realm_rows]

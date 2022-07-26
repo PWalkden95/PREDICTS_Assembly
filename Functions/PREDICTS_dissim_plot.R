@@ -47,8 +47,8 @@ panel.nest<- function(x, y){
   text(0.5, 0.3, txt_3, cex = cex.cor_3+0.1, font = 2)
 }
 
-col_names <- c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Cropland", "Pasture","Intensive agriculture","Minimal agriculture", "Urban")
-diag_colours <- c("olivedrab4","olivedrab3","lightgreen","gold1","khaki","gold1","khaki","ivory4")
+col_names <- c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Cropland", "Pasture","Intensive agriculture","Minimal agriculture", "Urban")
+diag_colours <- c("olivedrab4","chartreuse4", "olivedrab3","lightgreen","gold1","khaki","gold1","khaki","ivory4")
 names(diag_colours) <- col_names
 
 diag.pan<- function(x){

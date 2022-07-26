@@ -134,15 +134,6 @@ PREDICTS <- PREDICTS_full %>%  ## PREDICTS data
       ),
       "Secondary vegetation",
       paste(Predominant_habitat)
-    ),
-    Predominant_habitat = ifelse(
-      grepl(
-        Predominant_habitat,
-        pattern = "primary",
-        ignore.case = TRUE
-      ),
-      "Primary vegetation",
-      paste(Predominant_habitat)
     )
   ) %>%
   data.frame()
@@ -179,41 +170,46 @@ table(TPD_LU$Predominant_habitat, TPD_LU$Realm)
 realm_land_uses <- list()
 realm_land_uses[["Afrotropic"]] <-
   c(
-    "Primary vegetation",
-    "Secondary vegetation",
-    "Plantation forest",
-    "Cropland",
-    "Pasture",
-    "Urban"
+    "Primary forest",
+    "Primary non-forest"#,
+    #"Secondary vegetation",
+    #"Plantation forest",
+    #"Cropland",
+    #"Pasture",
+    #"Urban"
   )
 realm_land_uses[["Australasia"]] <-
-  c("Primary vegetation",
-    "Secondary vegetation",
-    "Pasture",
-    "Urban")
+  c("Primary forest",
+    "Primary non-forest"#,
+    #"Secondary vegetation",
+    #"Pasture",
+    #"Urban"
+    )
 realm_land_uses[["Indo-Malay"]] <-
-  c("Primary vegetation",
-    "Secondary vegetation",
-    "Plantation forest",
-    "Cropland")
+  c("Primary forest"#,
+    #"Secondary vegetation",
+    #"Plantation forest",
+    #"Cropland"
+    )
 realm_land_uses[["Nearctic"]] <-
-  c("Primary vegetation", "Pasture", "Cropland", "Urban")
+  c("Primary forest","Primary non-forest"#, "Pasture", "Cropland", "Urban"
+    )
 realm_land_uses[["Neotropic"]] <-
   c(
-    "Primary vegetation",
-    "Secondary vegetation",
-    "Plantation forest",
-    "Pasture",
-    "Cropland",
-    "Urban"
+    "Primary forest"#,
+    #"Secondary vegetation",
+    #"Plantation forest",
+    #"Pasture",
+    #"Cropland",
+    #"Urban"
   )
 realm_land_uses[["Palearctic"]] <-
   c(
-    "Primary vegetation",
-    "Secondary vegetation",
-    "Plantation forest",
-    "Cropland",
-    "Urban"
+    "Primary forest"#,
+    #"Secondary vegetation",
+    #"Plantation forest",
+    #"Cropland",
+    #"Urban"
   )
 
 
@@ -357,8 +353,8 @@ mapping_lists <-
 
 ### extract the lists
 
-TPD_for_mapping_data <- mapping_lists[[1]]
-TPD_for_mapping_data_random <- mapping_lists[[2]]
+TPD_for_mapping_data <- mapping_lists[[2]]
+TPD_for_mapping_data_random <- mapping_lists[[1]]
 
 write_rds(file = "Outputs/TPD_forage_mapping.rds", TPD_for_mapping_data)
 write_rds(file = "Outputs/TPD_forage_mapping_random.rds", TPD_for_mapping_data_random)
@@ -370,7 +366,10 @@ TPD_for_mapping_data_random <-
   markdown_rds_open("Outputs/TPD_forage_mapping_random.rds")
 
 
-test <- TPD_for_mapping_data$Neotropic$`Primary vegetation`
+
+
+
+
 
 ###########################  have the observed LUR hypervolumes with idetary nichees mapped visualised
 

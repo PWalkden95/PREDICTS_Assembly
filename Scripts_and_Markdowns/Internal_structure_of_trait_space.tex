@@ -1,0 +1,894 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{lmodern}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\hypersetup{
+  pdftitle={Internal\_hypervolume\_structure},
+  pdfauthor={Patrick Alexander Walkden},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+\urlstyle{same} % disable monospaced font for URLs
+\usepackage[margin=1in]{geometry}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.77,0.63,0.00}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+
+\title{Internal\_hypervolume\_structure}
+\author{Patrick Alexander Walkden}
+\date{2022-07-12}
+
+\begin{document}
+\maketitle
+
+\hypertarget{analysis-of-the-impacts-of-land-use-on-the-internal-structure-of-avian-functional-trait-space}{%
+\subsection{Analysis of the impacts of land use on the internal
+structure of avian functional trait
+space}\label{analysis-of-the-impacts-of-land-use-on-the-internal-structure-of-avian-functional-trait-space}}
+
+This markdown re-visits the hole analysis that was somewhat abandoned in
+the first pass. The goal was to capture changes in the internal
+structure of trait spaces, which traditional methods and approaches
+aren't typically able to do so. To reveal such impacts I aim to detect
+``hole'' within the bounds of a convex hull surrounding the observed
+hypervolumes. I defined holes in an analougous way to Blonder by
+encasing the observed hypervolume in an convex hull and then comparing
+the trait space to a ``baseline'' condition. Where we differ is that my
+baseline is defined as a null expectation contingent on the observed
+hypervolumes regional species pool, as opposed to all unoccupied trait
+space being considered a ``hole''. Another difference can be seen in the
+clustering approach to group empty space into distinct ``holes''.
+Blonder uses distance based clustering approaches, which is poor for
+detecting non-circular holes. I using density based clustering which
+defines holes based on the number of points within a minimum distance to
+each point. To accont for the sensitivity of hole detection to this
+minimum distance I create hole profiles calculating the number of holes
+and their size as this radius increases.
+
+Intuitively, one would expect that bird communities in land uses of
+increasing human influence would display a greater erosion of their
+internal trait space, but we will see what we capture.
+
+\hypertarget{load-in-data-packages-and-functions}{%
+\subsection{Load in data, packages and
+functions}\label{load-in-data-packages-and-functions}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{rm}\NormalTok{(}\AttributeTok{list =} \FunctionTok{ls}\NormalTok{())}
+
+\FunctionTok{require}\NormalTok{(mgcv) }\DocumentationTok{\#\# to perform GAMs}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Loading required package: mgcv
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'mgcv' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: nlme
+\end{verbatim}
+
+\begin{verbatim}
+## This is mgcv 1.8-40. For overview type 'help("mgcv-package")'.
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{require}\NormalTok{(tidyverse) }\DocumentationTok{\#\# for data  wrangling and piping}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Loading required package: tidyverse
+\end{verbatim}
+
+\begin{verbatim}
+## -- Attaching packages --------------------------------------- tidyverse 1.3.1 --
+\end{verbatim}
+
+\begin{verbatim}
+## v ggplot2 3.3.6     v purrr   0.3.4
+## v tibble  3.1.7     v dplyr   1.0.9
+## v tidyr   1.2.0     v stringr 1.4.0
+## v readr   2.1.2     v forcats 0.5.1
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'ggplot2' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'tibble' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'tidyr' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'readr' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'dplyr' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## -- Conflicts ------------------------------------------ tidyverse_conflicts() --
+## x dplyr::collapse() masks nlme::collapse()
+## x dplyr::filter()   masks stats::filter()
+## x dplyr::lag()      masks stats::lag()
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{source}\NormalTok{(}\StringTok{"../Functions/TPD\_3D\_plots.R"}\NormalTok{) }\DocumentationTok{\#\# my very own TPD functions}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Loading required package: gstat
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'gstat' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: sf
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'sf' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Linking to GEOS 3.9.1, GDAL 3.2.1, PROJ 7.2.1; sf_use_s2() is TRUE
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: ggpubr
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: magrittr
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'magrittr' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## 
+## Attaching package: 'magrittr'
+\end{verbatim}
+
+\begin{verbatim}
+## The following object is masked from 'package:purrr':
+## 
+##     set_names
+\end{verbatim}
+
+\begin{verbatim}
+## The following object is masked from 'package:tidyr':
+## 
+##     extract
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: rgl
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'rgl' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: geometry
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'geometry' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: fastcluster
+\end{verbatim}
+
+\begin{verbatim}
+## 
+## Attaching package: 'fastcluster'
+\end{verbatim}
+
+\begin{verbatim}
+## The following object is masked from 'package:stats':
+## 
+##     hclust
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: Hmisc
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'Hmisc' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: lattice
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: survival
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: Formula
+\end{verbatim}
+
+\begin{verbatim}
+## 
+## Attaching package: 'Hmisc'
+\end{verbatim}
+
+\begin{verbatim}
+## The following objects are masked from 'package:dplyr':
+## 
+##     src, summarize
+\end{verbatim}
+
+\begin{verbatim}
+## The following objects are masked from 'package:base':
+## 
+##     format.pval, units
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: magick
+\end{verbatim}
+
+\begin{verbatim}
+## Linking to ImageMagick 6.9.12.3
+## Enabled features: cairo, freetype, fftw, ghostscript, heic, lcms, pango, raw, rsvg, webp
+## Disabled features: fontconfig, x11
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'webshot2' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Warning in gzfile(file, "rb"): cannot open compressed file 'Functions/
+## TPD_colours.rds', probable reason 'No such file or directory'
+\end{verbatim}
+
+\begin{verbatim}
+## Error in gzfile(file, "rb") : cannot open the connection
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: dbscan
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'dbscan' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: fpc
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'fpc' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## 
+## Attaching package: 'fpc'
+\end{verbatim}
+
+\begin{verbatim}
+## The following object is masked from 'package:dbscan':
+## 
+##     dbscan
+\end{verbatim}
+
+\begin{verbatim}
+## Loading required package: factoextra
+\end{verbatim}
+
+\begin{verbatim}
+## Warning: package 'factoextra' was built under R version 4.1.3
+\end{verbatim}
+
+\begin{verbatim}
+## Welcome! Want to learn more? See two factoextra-related books at https://goo.gl/ve3WBa
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{PREDICTS\_tpds }\OtherTok{\textless{}{-}}
+  \FunctionTok{readRDS}\NormalTok{(}\StringTok{"../Outputs/PREDICTS\_sites\_tpds.rds"}\NormalTok{) }\CommentTok{\# morphometric TPDs of observed sites}
+
+\NormalTok{PREDICTS\_randomisations }\OtherTok{\textless{}{-}}
+  \FunctionTok{readRDS}\NormalTok{(}\StringTok{"../Outputs/randomisations\_TPD\_morpho.rds"}\NormalTok{) }\DocumentationTok{\#\# morphometric TPD of randomisised sites}
+
+
+
+
+\NormalTok{PREDICTS\_full }\OtherTok{\textless{}{-}} \FunctionTok{readRDS}\NormalTok{(}\StringTok{"../Outputs/refined\_predicts.rds"}\NormalTok{)}
+
+\NormalTok{PREDICTS }\OtherTok{\textless{}{-}}\NormalTok{ PREDICTS\_full }\SpecialCharTok{\%\textgreater{}\%}  \DocumentationTok{\#\# PREDICTS data}
+\NormalTok{  dplyr}\SpecialCharTok{::}\FunctionTok{distinct}\NormalTok{(SSBS, Predominant\_habitat, Realm, SS) }\SpecialCharTok{\%\textgreater{}\%} \DocumentationTok{\#\# pull out land\_use type, Subregion, realm etc}
+\NormalTok{  dplyr}\SpecialCharTok{::}\FunctionTok{mutate}\NormalTok{(}
+    \AttributeTok{Predominant\_habitat =} \FunctionTok{ifelse}\NormalTok{(}
+      \FunctionTok{grepl}\NormalTok{(}
+\NormalTok{        Predominant\_habitat,}
+        \AttributeTok{pattern =} \StringTok{"secondary"}\NormalTok{,}
+        \AttributeTok{ignore.case =} \ConstantTok{TRUE}
+\NormalTok{      ),}
+      \StringTok{"Secondary vegetation"}\NormalTok{,}
+      \FunctionTok{paste}\NormalTok{(Predominant\_habitat)}
+\NormalTok{    ),}
+    \AttributeTok{Predominant\_habitat =} \FunctionTok{ifelse}\NormalTok{(}
+      \FunctionTok{grepl}\NormalTok{(}
+\NormalTok{        Predominant\_habitat,}
+        \AttributeTok{pattern =} \StringTok{"primary"}\NormalTok{,}
+        \AttributeTok{ignore.case =} \ConstantTok{TRUE}
+\NormalTok{      ),}
+      \StringTok{"Primary vegetation"}\NormalTok{,}
+      \FunctionTok{paste}\NormalTok{(Predominant\_habitat)}
+\NormalTok{    )}
+\NormalTok{  ) }\SpecialCharTok{\%\textgreater{}\%} \FunctionTok{data.frame}\NormalTok{() }\DocumentationTok{\#\# merge all secondary sites together}
+
+
+
+\NormalTok{TPD\_land\_uses }\OtherTok{\textless{}{-}}
+  \FunctionTok{data.frame}\NormalTok{(}\AttributeTok{SSBS =} \FunctionTok{names}\NormalTok{(PREDICTS\_tpds)) }\SpecialCharTok{\%\textgreater{}\%}\NormalTok{ dplyr}\SpecialCharTok{::}\FunctionTok{left\_join}\NormalTok{(PREDICTS, }\AttributeTok{by =} \StringTok{"SSBS"}\NormalTok{) }\SpecialCharTok{\%\textgreater{}\%}\NormalTok{ dplyr}\SpecialCharTok{::}\FunctionTok{filter}\NormalTok{(Predominant\_habitat }\SpecialCharTok{!=} \StringTok{"Cannot decide"}\NormalTok{)}
+\DocumentationTok{\#\#\# check a table}
+\FunctionTok{table}\NormalTok{(TPD\_land\_uses}\SpecialCharTok{$}\NormalTok{Predominant\_habitat, TPD\_land\_uses}\SpecialCharTok{$}\NormalTok{Realm)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+##                       
+##                        Afrotropic Australasia Indo-Malay Nearctic Neotropic
+##   Cropland                     75           1         20       16        18
+##   Pasture                      20          22          0       28        68
+##   Plantation forest            89           3        119        3        32
+##   Primary vegetation          163          57         78       85        86
+##   Secondary vegetation         99          25         21        0        55
+##   Urban                         9          11          4       29        40
+##                       
+##                        Palearctic
+##   Cropland                     23
+##   Pasture                      26
+##   Plantation forest           161
+##   Primary vegetation          106
+##   Secondary vegetation        110
+##   Urban                        30
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{land\_uses }\OtherTok{\textless{}{-}}
+  \FunctionTok{c}\NormalTok{(}
+    \StringTok{"Primary vegetation"}\NormalTok{,}
+    \StringTok{"Secondary vegetation"}\NormalTok{,}
+    \StringTok{"Pasture"}\NormalTok{,}
+    \StringTok{"Cropland"}\NormalTok{,}
+    \StringTok{"Plantation forest"}\NormalTok{,}
+    \StringTok{"Urban"}
+\NormalTok{  )}
+\NormalTok{realms }\OtherTok{\textless{}{-}}
+  \FunctionTok{c}\NormalTok{(}\StringTok{"Neotropic"}\NormalTok{,}
+    \StringTok{"Afrotropic"}\NormalTok{,}
+    \StringTok{"Palearctic"}\NormalTok{,}
+    \StringTok{"Nearctic"}\NormalTok{,}
+    \StringTok{"Indo{-}Malay"}\NormalTok{,}
+    \StringTok{"Australasia"}\NormalTok{)}
+
+
+\NormalTok{land\_use\_colours }\OtherTok{\textless{}{-}}
+  \FunctionTok{data.frame}\NormalTok{(}
+    \AttributeTok{land\_use =}\NormalTok{ land\_uses,}
+    \AttributeTok{colours =} \FunctionTok{c}\NormalTok{(}
+      \StringTok{"chartreuse4"}\NormalTok{,}
+      \StringTok{"olivedrab2"}\NormalTok{,}
+      \StringTok{"\#EBF787"}\NormalTok{,}
+      \StringTok{"\#E3D438"}\NormalTok{,}
+      \StringTok{"springgreen2"}\NormalTok{,}
+      \StringTok{"\#718879"}
+\NormalTok{    )}
+\NormalTok{  )}
+\FunctionTok{rownames}\NormalTok{(land\_use\_colours) }\OtherTok{\textless{}{-}}\NormalTok{ land\_uses}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{first-things-first-calculate-the-hole-statistics}{%
+\subsection{First things first: calculate the hole
+statistics}\label{first-things-first-calculate-the-hole-statistics}}
+
+This analysis will be based on the Land-Use Realm system hypervolumes to
+be able to more clearly reveal geomertic patterns, which at the site
+level is just too noisy and suffers from data limitations.
+
+\hypertarget{trimming-things-down-a-little}{%
+\subsection{Trimming things down a
+little}\label{trimming-things-down-a-little}}
+
+Now need to exclude some Land-Use Realm hypervolumes that were too data
+poor to get reliable measures. Also to facilitate modelling I scale some
+variables.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use }\OtherTok{\textless{}{-}}
+  \FunctionTok{factor}\NormalTok{(}
+\NormalTok{    realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use,}
+    \AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}
+      \StringTok{"Primary vegetation"}\NormalTok{,}
+      \StringTok{"Secondary vegetation"}\NormalTok{,}
+      \StringTok{"Plantation forest"}\NormalTok{,}
+      \StringTok{"Pasture"}\NormalTok{,}
+      \StringTok{"Cropland"}\NormalTok{,}
+      \StringTok{"Urban"}
+\NormalTok{    )}
+\NormalTok{  )}
+
+
+\NormalTok{modelling\_hole\_dataframe }\OtherTok{\textless{}{-}}
+\NormalTok{  realm\_level\_hole\_frame[}\SpecialCharTok{{-}}\FunctionTok{which}\NormalTok{(}
+\NormalTok{    realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use }\SpecialCharTok{==} \StringTok{"Urban"} \SpecialCharTok{\&}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{realm }\SpecialCharTok{==} \StringTok{"Neotropic"} \SpecialCharTok{|}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use }\SpecialCharTok{==} \StringTok{"Secondary vegetation"} \SpecialCharTok{\&}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{realm }\SpecialCharTok{==} \StringTok{"Nearctic"} \SpecialCharTok{|}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use }\SpecialCharTok{==} \StringTok{"Plantation forest"} \SpecialCharTok{\&}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{realm }\SpecialCharTok{==} \StringTok{"Nearctic"} \SpecialCharTok{|}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use }\SpecialCharTok{==} \StringTok{"Urban"} \SpecialCharTok{\&}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{realm }\SpecialCharTok{==} \StringTok{"Australasia"} \SpecialCharTok{|}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use }\SpecialCharTok{==} \StringTok{"Plantation forest"} \SpecialCharTok{\&}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{realm }\SpecialCharTok{==} \StringTok{"Australasia"} \SpecialCharTok{|}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use }\SpecialCharTok{==} \StringTok{"Cropland"} \SpecialCharTok{\&}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{realm }\SpecialCharTok{==} \StringTok{"Australasia"} \SpecialCharTok{|}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use }\SpecialCharTok{==} \StringTok{"Pasture"} \SpecialCharTok{\&}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{realm }\SpecialCharTok{==} \StringTok{"Indo{-}Malay"} \SpecialCharTok{|}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{land\_use }\SpecialCharTok{==} \StringTok{"Urban"} \SpecialCharTok{\&}
+\NormalTok{      realm\_level\_hole\_frame}\SpecialCharTok{$}\NormalTok{realm }\SpecialCharTok{==} \StringTok{"Indo{-}Malay"}
+\NormalTok{  ), ]}
+
+
+\DocumentationTok{\#\# Let\textquotesingle{}s have a look at the total hole volume}
+
+
+\FunctionTok{hist}\NormalTok{(}\FunctionTok{scale}\NormalTok{(modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{total\_hole\_volume), }\AttributeTok{breaks =} \DecValTok{20}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{Internal_structure_of_trait_space_files/figure-latex/trimming things down-1.pdf}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{hist}\NormalTok{(}\FunctionTok{scale}\NormalTok{(}\FunctionTok{sqrt}\NormalTok{(modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{total\_hole\_volume)), }\AttributeTok{breaks =} \DecValTok{20}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{Internal_structure_of_trait_space_files/figure-latex/trimming things down-2.pdf}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{hist}\NormalTok{(}\FunctionTok{scale}\NormalTok{(}\FunctionTok{log}\NormalTok{(modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{total\_hole\_volume)), }\AttributeTok{breaks =} \DecValTok{20}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{Internal_structure_of_trait_space_files/figure-latex/trimming things down-3.pdf}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DocumentationTok{\#\#\# out of these three I think the sqrt transformation is the best }
+
+
+\DocumentationTok{\#\# looks okay let\textquotesingle{}s just scale it to have a standard deviation of 1 and a mean of 0}
+
+\NormalTok{modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{total\_hole\_volume }\OtherTok{\textless{}{-}} \FunctionTok{scale}\NormalTok{(}\FunctionTok{sqrt}\NormalTok{(modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{total\_hole\_volume))[,}\DecValTok{1}\NormalTok{]}
+
+
+\DocumentationTok{\#\# the size of the observed hypervolume }
+
+\FunctionTok{hist}\NormalTok{(}\FunctionTok{scale}\NormalTok{(modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{hypervolume\_occupancy))}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{Internal_structure_of_trait_space_files/figure-latex/trimming things down-4.pdf}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DocumentationTok{\#\# okay maybe could use a transformation}
+
+
+\FunctionTok{hist}\NormalTok{(}\FunctionTok{scale}\NormalTok{(}\FunctionTok{log}\NormalTok{(modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{hypervolume\_occupancy)))}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{Internal_structure_of_trait_space_files/figure-latex/trimming things down-5.pdf}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DocumentationTok{\#\# log probably looks best }
+
+
+\NormalTok{modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{hypervolume\_occupancy }\OtherTok{\textless{}{-}} \FunctionTok{scale}\NormalTok{(}\FunctionTok{log}\NormalTok{(modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{hypervolume\_occupancy))[,}\DecValTok{1}\NormalTok{]}
+
+
+\FunctionTok{source}\NormalTok{(}\StringTok{"https://highstat.com/Books/Book2/HighstatLibV10.R"}\NormalTok{)}
+
+\FunctionTok{corvif}\NormalTok{(modelling\_hole\_dataframe[,}\FunctionTok{c}\NormalTok{(}\StringTok{"total\_hole\_volume"}\NormalTok{,}\StringTok{"hypervolume\_occupancy"}\NormalTok{,}\StringTok{"land\_use"}\NormalTok{)])}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## 
+## 
+## Variance inflation factors
+## 
+##                           GVIF Df GVIF^(1/2Df)
+## total_hole_volume     2.287586  1     1.512477
+## hypervolume_occupancy 2.826103  1     1.681102
+## land_use              1.732807  5     1.056513
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DocumentationTok{\#\# brilliant this shows that there is no multi{-}colinearity so good to go ahead with the modelling}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{pre-modelling}{%
+\subsection{Pre-modelling}\label{pre-modelling}}
+
+Before I start modelling I would like to look at what sort of
+relationship the variables have with each other, for example the radius
+of hole detection is not likely to have a linear relationship with total
+hole volume as it will initially increase sharply with radius but then
+plateau when all unoccupied space is considered to be part of a hole.
+
+So to have a look at this we
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DocumentationTok{\#\#\# relationship between radius and hole volume }
+
+
+\NormalTok{radius\_hole\_volume }\OtherTok{\textless{}{-}} \FunctionTok{ggplot}\NormalTok{(}\AttributeTok{data =}\NormalTok{ modelling\_hole\_dataframe, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x =}\NormalTok{ radius, }\AttributeTok{y =}\NormalTok{ total\_hole\_volume, }\AttributeTok{colour =}\NormalTok{ land\_use))}\SpecialCharTok{+}
+  \FunctionTok{geom\_point}\NormalTok{() }\SpecialCharTok{+}
+  \FunctionTok{facet\_grid}\NormalTok{(}\SpecialCharTok{\textasciitilde{}}\NormalTok{realm)}
+
+
+\FunctionTok{plot}\NormalTok{(radius\_hole\_volume)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{Internal_structure_of_trait_space_files/figure-latex/variable relationships-1.pdf}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DocumentationTok{\#\# right this looks non{-}linear so looking like we are going to need a non{-}linear modelling approach I\textquotesingle{}m thinkin generalised linear models (GAMs)}
+
+
+\NormalTok{hole\_volume\_occupancy }\OtherTok{\textless{}{-}} \FunctionTok{ggplot}\NormalTok{(}\AttributeTok{data =}\NormalTok{ modelling\_hole\_dataframe, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x =}\NormalTok{ hypervolume\_occupancy, }\AttributeTok{y =}\NormalTok{ total\_hole\_volume, }\AttributeTok{colour =}\NormalTok{ land\_use)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_point}\NormalTok{()}
+
+
+\FunctionTok{plot}\NormalTok{(hole\_volume\_occupancy)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{Internal_structure_of_trait_space_files/figure-latex/variable relationships-2.pdf}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DocumentationTok{\#\# Just looking at the top values here the realtionship is looking a lot more linear with increase observed hypervolume size the larger the observed hole may be.}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{modelling}{%
+\subsection{Modelling}\label{modelling}}
+
+Considering the relationships between the variables I think the model to
+explore the influence of land use on the internal structure of avian
+trait space will take the form of\ldots{}
+
+A generalised additive model (GAM) taking total hole volume as a
+function of land use, the detection radius of hole as a smoothed
+variable, observed hypervolume size as a linear variable and the
+interaction of both with land use.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{hole\_volume\_gam }\OtherTok{\textless{}{-}}\NormalTok{ mgcv}\SpecialCharTok{::}\FunctionTok{gam}\NormalTok{(}
+\NormalTok{  total\_hole\_volume }\SpecialCharTok{\textasciitilde{}} \FunctionTok{s}\NormalTok{(radius) }\SpecialCharTok{+}
+    \FunctionTok{s}\NormalTok{(radius, }\AttributeTok{by =}\NormalTok{ land\_use) }\SpecialCharTok{+}
+\NormalTok{    hypervolume\_occupancy }\SpecialCharTok{+}
+    \CommentTok{\#te(hypervolume\_occupancy,radius)+}
+\NormalTok{    hypervolume\_occupancy}\SpecialCharTok{:}\NormalTok{land\_use  }\SpecialCharTok{+}
+\NormalTok{    land\_use,}
+  \AttributeTok{data =}\NormalTok{ modelling\_hole\_dataframe,}
+  \AttributeTok{method =} \StringTok{"REML"}
+\NormalTok{)}
+
+
+\FunctionTok{summary}\NormalTok{(hole\_volume\_gam)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## 
+## Family: gaussian 
+## Link function: identity 
+## 
+## Formula:
+## total_hole_volume ~ s(radius) + s(radius, by = land_use) + hypervolume_occupancy + 
+##     hypervolume_occupancy:land_use + land_use
+## 
+## Parametric coefficients:
+##                                                    Estimate Std. Error t value
+## (Intercept)                                        -0.49343    0.02645 -18.652
+## hypervolume_occupancy                               0.75796    0.02658  28.519
+## land_useSecondary vegetation                        0.57556    0.03563  16.152
+## land_usePlantation forest                           0.69090    0.05214  13.250
+## land_usePasture                                     0.69337    0.03478  19.935
+## land_useCropland                                    0.67763    0.03425  19.786
+## land_useUrban                                       0.38402    0.15487   2.480
+## hypervolume_occupancy:land_useSecondary vegetation -0.20490    0.03922  -5.224
+## hypervolume_occupancy:land_usePlantation forest    -0.05633    0.04762  -1.183
+## hypervolume_occupancy:land_usePasture               0.01062    0.03504   0.303
+## hypervolume_occupancy:land_useCropland              0.10885    0.03948   2.757
+## hypervolume_occupancy:land_useUrban                -0.00640    0.05427  -0.118
+##                                                    Pr(>|t|)    
+## (Intercept)                                         < 2e-16 ***
+## hypervolume_occupancy                               < 2e-16 ***
+## land_useSecondary vegetation                        < 2e-16 ***
+## land_usePlantation forest                           < 2e-16 ***
+## land_usePasture                                     < 2e-16 ***
+## land_useCropland                                    < 2e-16 ***
+## land_useUrban                                       0.01325 *  
+## hypervolume_occupancy:land_useSecondary vegetation 1.96e-07 ***
+## hypervolume_occupancy:land_usePlantation forest     0.23694    
+## hypervolume_occupancy:land_usePasture               0.76182    
+## hypervolume_occupancy:land_useCropland              0.00589 ** 
+## hypervolume_occupancy:land_useUrban                 0.90615    
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Approximate significance of smooth terms:
+##                                              edf    Ref.df       F  p-value    
+## s(radius)                              8.7588867 8.9659331 157.147  < 2e-16 ***
+## s(radius):land_usePrimary vegetation   1.0006844 1.0011694   1.190  0.27559    
+## s(radius):land_useSecondary vegetation 2.9146880 3.6236653   2.815  0.02999 *  
+## s(radius):land_usePlantation forest    0.0004687 0.0009231   0.044  0.99490    
+## s(radius):land_usePasture              1.5149511 1.8577096   0.414  0.56726    
+## s(radius):land_useCropland             3.2442492 4.0353832   3.970  0.00285 ** 
+## s(radius):land_useUrban                3.8614894 4.5286250   7.811 7.38e-06 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Rank: 74/75
+## R-sq.(adj) =  0.832   Deviance explained = 83.5%
+## -REML = 1018.4  Scale est. = 0.1682    n = 1802
+\end{verbatim}
+
+\hypertarget{hole-volume-summary}{%
+\subsection{Hole volume summary}\label{hole-volume-summary}}
+
+This model shows that holes are likely to larger is avian trait spaces
+of bird communities in all other land uses compared to primary
+vegetation, significantly so in all land uses other than urban. The size
+of the observed hypervolume and hole detection radius also have
+significant effects on the total hole volume, unsurprisingly the larger
+the observed hypervolume and detection radius the larger the holes.
+Their interactions with land use are also significant.
+
+Some interesting interactions going on here with urban holes becoming
+smaller as observed hypervolume size increases, however observed
+hypervolume size for urban LURs are all typically very small.
+
+But, lets get some visualisations to aid us in the interpretations of
+the model. first let's have a look at the effect of the hole detection
+radius on the total hole volume for each land use. To predict the model
+I have kept the hypervolume occupancy as the median hypervolume
+occupancy observed across all viable LUR combinations.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{gamm\_plot\_radius }\OtherTok{\textless{}{-}} \FunctionTok{c}\NormalTok{()}
+
+
+
+\ControlFlowTok{for}\NormalTok{ (land\_use }\ControlFlowTok{in}\NormalTok{ land\_uses) \{}
+  
+  
+\NormalTok{  land\_use\_data }\OtherTok{\textless{}{-}}
+\NormalTok{    modelling\_hole\_dataframe[modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{land\_use }\SpecialCharTok{==}\NormalTok{ land\_use, }\StringTok{"radius"}\NormalTok{]}
+  
+  \CommentTok{\#hyper\_size \textless{}{-} range(unique(realm\_level\_hole\_frame\_2[realm\_level\_hole\_frame\_2$land\_use == land\_use, "hypervolume\_occupancy"]))}
+  \CommentTok{\#hyper\_size \textless{}{-} seq(hyper\_size[1],hyper\_size[2], length.out = 100)}
+  
+  
+  \ControlFlowTok{for}\NormalTok{ (i }\ControlFlowTok{in}\NormalTok{ land\_use\_data) \{}
+   \CommentTok{\#   median\_volume \textless{}{-} median(unique(modelling\_hole\_dataframe[modelling\_hole\_dataframe$land\_use == land\_use,"hypervolume\_occupancy"]))}
+\NormalTok{  median\_volume }\OtherTok{\textless{}{-}}
+      \FunctionTok{median}\NormalTok{(}\FunctionTok{unique}\NormalTok{(modelling\_hole\_dataframe}\SpecialCharTok{$}\NormalTok{hypervolume\_occupancy))}
+    
+    
+\NormalTok{    data }\OtherTok{\textless{}{-}} \FunctionTok{data.frame}\NormalTok{(}
+      \AttributeTok{radius =}\NormalTok{ i,}
+      \AttributeTok{land\_use =}\NormalTok{ land\_use,}
+      \FunctionTok{predict}\NormalTok{(}
+\NormalTok{        hole\_volume\_gam,}
+        \AttributeTok{newdata =} \FunctionTok{data.frame}\NormalTok{(}
+          \AttributeTok{radius =}\NormalTok{ i,}
+          \AttributeTok{land\_use =}\NormalTok{ land\_use,}
+          \AttributeTok{hypervolume\_occupancy =}\NormalTok{ median\_volume}
+\NormalTok{        ),}
+        \AttributeTok{se.fit =} \ConstantTok{TRUE}
+\NormalTok{      )}
+\NormalTok{    )}
+    
+\NormalTok{    gamm\_plot\_radius }\OtherTok{\textless{}{-}} \FunctionTok{rbind}\NormalTok{(gamm\_plot\_radius, data)}
+\NormalTok{  \}}
+\NormalTok{\}}
+
+
+\NormalTok{gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{land\_use }\OtherTok{\textless{}{-}}
+  \FunctionTok{factor}\NormalTok{(}
+\NormalTok{    gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{land\_use,}
+    \AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}
+      \StringTok{"Primary vegetation"}\NormalTok{,}
+      \StringTok{"Secondary vegetation"}\NormalTok{,}
+      \StringTok{"Pasture"}\NormalTok{,}
+      \StringTok{"Cropland"}\NormalTok{,}
+      \StringTok{"Plantation forest"}\NormalTok{,}
+      \StringTok{"Urban"}
+\NormalTok{    )}
+\NormalTok{  )}
+
+
+\NormalTok{gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{upper }\OtherTok{\textless{}{-}}
+\NormalTok{  gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{fit }\SpecialCharTok{+}\NormalTok{ gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{se.fit}
+\NormalTok{gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{lower }\OtherTok{\textless{}{-}}
+\NormalTok{  gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{fit }\SpecialCharTok{{-}}\NormalTok{ gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{se.fit}
+
+
+
+\NormalTok{test }\OtherTok{\textless{}{-}}
+  \FunctionTok{ggplot}\NormalTok{(}\AttributeTok{data =}\NormalTok{ gamm\_plot\_radius, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x =}\NormalTok{ radius, }\AttributeTok{y =}\NormalTok{ fit, }\AttributeTok{group =}\NormalTok{ land\_use)) }\SpecialCharTok{+}
+  \CommentTok{\#geom\_point(data = realm\_level\_radius\_data, aes( x = radius, y = mean\_hole\_volume, colour = land\_use), alpha = 0.7, size = 3) +}
+  \FunctionTok{geom\_line}\NormalTok{(}\AttributeTok{size =} \FloatTok{1.5}\NormalTok{, }\AttributeTok{show.legend =} \ConstantTok{FALSE}\NormalTok{,}\FunctionTok{aes}\NormalTok{(}\AttributeTok{colour =}\NormalTok{ land\_use)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_ribbon}\NormalTok{(}\FunctionTok{aes}\NormalTok{(}
+    \AttributeTok{ymin =}\NormalTok{ lower,}
+    \AttributeTok{ymax =}\NormalTok{ upper,}
+    \AttributeTok{fill =}\NormalTok{ land\_use}
+\NormalTok{  ),}
+  \AttributeTok{alpha =} \FloatTok{0.5}\NormalTok{, }\AttributeTok{show.legend =} \ConstantTok{FALSE}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_colour\_manual}\NormalTok{(}\AttributeTok{values =}\NormalTok{ land\_use\_colours[}\FunctionTok{as.character}\NormalTok{(}\FunctionTok{unique}\NormalTok{(gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{land\_use)), }\StringTok{"colours"}\NormalTok{]) }\SpecialCharTok{+}
+  \FunctionTok{scale\_fill\_manual}\NormalTok{(}\AttributeTok{values =}\NormalTok{ land\_use\_colours[}\FunctionTok{as.character}\NormalTok{(}\FunctionTok{unique}\NormalTok{(gamm\_plot\_radius}\SpecialCharTok{$}\NormalTok{land\_use)), }\StringTok{"colours"}\NormalTok{]) }\SpecialCharTok{+}
+  \FunctionTok{theme}\NormalTok{(}\AttributeTok{panel.background =} \FunctionTok{element\_rect}\NormalTok{(}\AttributeTok{fill =} \StringTok{\textquotesingle{}grey\textquotesingle{}}\NormalTok{, }\AttributeTok{color =} \StringTok{\textquotesingle{}grey\textquotesingle{}}\NormalTok{),}
+\AttributeTok{panel.grid.major =} \FunctionTok{element\_line}\NormalTok{(}\AttributeTok{color =} \StringTok{\textquotesingle{}grey\textquotesingle{}}\NormalTok{),}
+\AttributeTok{panel.grid.minor =} \FunctionTok{element\_line}\NormalTok{(}\AttributeTok{color =} \StringTok{\textquotesingle{}grey\textquotesingle{}}\NormalTok{)) }\SpecialCharTok{+}
+  \FunctionTok{xlab}\NormalTok{(}\StringTok{"Radius"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{ylab}\NormalTok{(}\StringTok{"Total Hole Volume"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{ylim}\NormalTok{(}\SpecialCharTok{{-}}\DecValTok{4}\NormalTok{,}\DecValTok{3}\NormalTok{) }
+
+
+\FunctionTok{plot}\NormalTok{(test)}
+\end{Highlighting}
+\end{Shaded}
+
+\includegraphics{Internal_structure_of_trait_space_files/figure-latex/observing GAM results-1.pdf}
+
+This plot looks encouraging that at the median observed hypervolume size
+that compared to primary vegetation all other land uses are predicted to
+have larger holes at all hole detection radius values. Interestingly
+again Urban bird communities are predicted to have the second smallest
+holes at the median hypervolume occupancy, however, this may not be too
+unexpected as urban Land-Use Realm systems typically have small observed
+hypervolume sizes that may be susceptible to functional homogenisation
+and these results may be indicative of that.
+
+\includegraphics{"../Figures/Animations/radius_hole_volume/radius_hole_GIF.gif"}
+
+\end{document}

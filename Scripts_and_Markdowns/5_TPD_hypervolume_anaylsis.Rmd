@@ -67,16 +67,8 @@ PREDICTS <- PREDICTS_full %>%  ## PREDICTS data
       ),
       "Secondary vegetation",
       paste(Predominant_habitat)
-    ),
-    Predominant_habitat = ifelse(
-      grepl(
-        Predominant_habitat,
-        pattern = "primary",
-        ignore.case = TRUE
-      ),
-      "Primary vegetation",
-      paste(Predominant_habitat)
     )
+    
   ) %>% data.frame() ## merge all secondary sites together
 
 
@@ -210,7 +202,7 @@ However, for now lets have a look at these trait spaces and use Primary forest s
 ```{r site occupancy visualisation, webgl = TRUE}
 
 pri_afro <-
-  TPD_LU %>% dplyr::filter(Predominant_habitat == "Primary vegetation",
+  TPD_LU %>% dplyr::filter(Predominant_habitat == "Primary forest",
                            Realm == "Afrotropic") %>% dplyr::distinct(SSBS) %>% pull()
 
 TPD_3d_plot(
@@ -295,7 +287,8 @@ plot_data$Land_use <-
   factor(
     plot_data$Land_use,
     levels = c(
-      "Primary vegetation",
+      "Primary forest",
+      "Primary non-forest",
       "Secondary vegetation",
       "Plantation forest",
       "Pasture",
@@ -318,10 +311,11 @@ hist(plot_data$FDis)
 hist(plot_data$FEve)
 
 hist(car::logit(plot_data$FDis))
+plot_data$FDis <- car::logit(plot_data$FDis)
 
 mod_rich <-
-  lmer(log(FRich) ~ Land_use  + (1 | SS) , data = plot_data)
-mod_dis <- lmer(car::logit(FDis) ~ Land_use * Realm + (1 | SS) , data = plot_data)
+  lmer(log(FRich) ~ Land_use + Realm  + (1 | SS) , data = plot_data)
+mod_dis <- lmer(FDis ~ Land_use * Realm + (1 | SS) , data = plot_data)
 mod_eve <- lmer(FEve ~ Land_use * Realm + (1 | SS) , data = plot_data)
 
 ```
@@ -358,38 +352,41 @@ car::Anova(mod_eve)
 
 pred_mod <- data.frame(
   Realm = c(
-    rep("Afrotropic", 5),
-    rep("Australasia", 4),
+    rep("Afrotropic", 6),
+    rep("Australasia", 5),
     rep("Indo-Malay", 4),
-    rep("Nearctic", 4),
+    rep("Nearctic", 5),
     rep("Neotropic", 6),
     rep("Palearctic", 6)
   ),
   Land_use = c(
-    "Primary vegetation",
+    "Primary forest",
+    "Primary non-forest",
     "Pasture",
     "Plantation forest",
     "Secondary vegetation",
     "Cropland",
-    "Primary vegetation",
+    "Primary forest",
+    "Primary non-forest",
     "Pasture",
     "Secondary vegetation",
     "Urban",
-    "Primary vegetation",
+    "Primary forest",
     "Plantation forest",
     "Secondary vegetation",
     "Cropland",
-    "Primary vegetation",
+    "Primary forest",
+    "Primary non-forest",
     "Pasture",
     "Cropland",
     "Urban",
-    "Primary vegetation",
+    "Primary forest",
     "Pasture",
     "Plantation forest",
     "Secondary vegetation",
     "Cropland",
     "Urban",
-    "Primary vegetation",
+    "Primary forest",
     "Pasture",
     "Plantation forest",
     "Secondary vegetation",
@@ -416,6 +413,8 @@ mix_model_boot <-
     
     
     for (i in 1:length(model)) {
+      
+      
       FD_met <-
         unlist(str_split(as.character(model[[i]]@call)[2], pattern = " "))[1]
       
@@ -455,7 +454,7 @@ mix_model_boot <-
                 FD_met, split = "\\("
               ))[2], split = "\\)"))[1]
           } else {
-            if (transformation == "logit")
+            if (transformation[i] == "logit")
               data$estimate <- boot::inv.logit(booted_mod$t0)
             bootstraps <- boot::inv.logit(booted_mod$t)
           }
@@ -525,12 +524,13 @@ mix_boot_plot_FD <- function(boot_data) {
         "Pasture",
         "Plantation forest",
         "Secondary vegetation",
-        "Primary vegetation"
+        "Primary non-forest",
+        "Primary forest"
       )
     )
   
   levels(boot_data$Land_use) <-
-    c("Urb", "Crp", "Pas", "PlnFor", "SecVeg", "PriVeg")
+    c("Urb", "Crp", "Pas", "PlnFor", "SecVeg","PriNFor", "PriFor")
   
   
   
@@ -550,7 +550,7 @@ mix_boot_plot_FD <- function(boot_data) {
     
     
     pri_intercept_rich <-
-      median(mod_rich_plot %>% dplyr::filter(Land_use == "PriVeg") %>% pull(value))
+      median(mod_rich_plot %>% dplyr::filter(Land_use == "PriFor") %>% pull(value))
     
     plot_rich <-
       ggplot(data = mod_rich_plot, aes(x = Land_use, y = value, fill = Land_use)) +
@@ -585,7 +585,7 @@ mix_boot_plot_FD <- function(boot_data) {
     mod_dis_plot <- p_d %>% dplyr::filter(model == "FDis")
     
     pri_intercept_dis <-
-      median(mod_dis_plot %>% dplyr::filter(Land_use == "PriVeg") %>% pull(value))
+      median(mod_dis_plot %>% dplyr::filter(Land_use == "PriFor") %>% pull(value))
     
     
     plot_dis <-
@@ -625,7 +625,7 @@ mix_boot_plot_FD <- function(boot_data) {
     mod_eve_plot <- p_d %>% dplyr::filter(model == "FEve")
     
     pri_intercept_eve <-
-      median(mod_eve_plot %>% dplyr::filter(Land_use == "PriVeg") %>% pull(value))
+      median(mod_eve_plot %>% dplyr::filter(Land_use == "PriFor") %>% pull(value))
     
     plot_eve <-
       ggplot(data = mod_eve_plot, aes(x = Land_use, y = value, fill = Land_use)) +
@@ -711,6 +711,16 @@ require(lme4)
 
 site_level_beta <- readRDS("../Outputs/sites_tpd_beta_diversity.rds")
 
+for(i in 1:nrow(site_level_beta)){
+  
+  site_1 <- site_level_beta$site1[i]
+  site_2 <- site_level_beta$site2[i]
+
+  
+  site_level_beta$land_use_comp[i] <- paste(TPD_LU$Predominant_habitat[which(TPD_LU$SSBS == site_2)],TPD_LU$Predominant_habitat[which(TPD_LU$SSBS == site_1)], sep = "_")
+    
+}
+
 
 geographical_distance_function <- function(dataframe){
   
@@ -735,7 +745,11 @@ geographical_distance_function <- function(dataframe){
 
 
 site_level_beta <-  geographical_distance_function(site_level_beta)
-land_uses <- c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban")
+land_uses <- c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban")
+
+
+write_rds(x = site_level_beta, file = "../Outputs/site_level_beta_data.rds")
+
 
 slb_data <- c()
 for (r in realms) {
@@ -772,7 +786,7 @@ slb_data[is.infinite(slb_data$log10_geodist),"log10_geodist"] <- 0
 
 slb_data$land_use_comp <- factor(slb_data$land_use_comp)
 slb_data$land_use_comp <-
-  relevel(slb_data$land_use_comp, ref = "Primary vegetation_Primary vegetation")
+  relevel(slb_data$land_use_comp, ref = "Primary forest_Primary forest")
 
 slb_data$Realm <- factor(slb_data$Realm)
 slb_data$Realm <- relevel(slb_data$Realm, ref = "Neotropic")
@@ -808,16 +822,25 @@ beta_boot <-
   mix_model_boot(
     model = list(beta_mod),
     newdata = beta_newdata,
-    transformation = "logit"
-  )
+    transformation = "logit"  )
+
+write_rds(file = "../Outputs/bootstrap_beta_models.rds", x = beta_boot)
+
 
 beta_levels <- c(
-  "Primary vegetation_Primary vegetation",
-  "Primary vegetation_Secondary vegetation",
-  "Primary vegetation_Plantation forest",
-  "Primary vegetation_Pasture",
-  "Primary vegetation_Cropland",
-  "Primary vegetation_Urban",
+  "Primary forest_Primary forest",
+  "Primary forest_Primary non-forest",
+  "Primary forest_Secondary vegetation",
+  "Primary forest_Plantation forest",
+  "Primary forest_Pasture",
+  "Primary forest_Cropland",
+  "Primary forest_Urban",
+  "Primary non-forest_Primary non-forest",
+  "Primary non-forest_Secondary vegetation",
+  "Primary non-forest_Plantation forest",
+  "Primary non-forest_Pasture",
+  "Primary non-forest_Cropland",
+  "Primary non-forest_Urban",
   "Secondary vegetation_Secondary vegetation",
   "Secondary vegetation_Plantation forest",
   "Secondary vegetation_Pasture",
@@ -880,7 +903,8 @@ Now let's calculate some beta-diversity metrics between the sites and characteri
 realm_land_uses <- list()
 realm_land_uses[["Afrotropic"]] <-
   c(
-    "Primary vegetation",
+    "Primary forest",
+    "Primary non-forest",
     "Secondary vegetation",
     "Plantation forest",
     "Pasture",
@@ -888,20 +912,21 @@ realm_land_uses[["Afrotropic"]] <-
     "Urban"
   )
 realm_land_uses[["Australasia"]] <-
-  c("Primary vegetation",
+  c("Primary forest",
+    "Primary non-forest",
     "Secondary vegetation",
     "Pasture",
     "Urban")
 realm_land_uses[["Indo-Malay"]] <-
-  c("Primary vegetation",
+  c("Primary forest",
     "Secondary vegetation",
     "Plantation forest",
     "Cropland")
 realm_land_uses[["Nearctic"]] <-
-  c("Primary vegetation", "Pasture", "Cropland", "Urban")
+  c("Primary forest","Primary non-forest", "Pasture", "Cropland", "Urban")
 realm_land_uses[["Neotropic"]] <-
   c(
-    "Primary vegetation",
+    "Primary forest",
     "Secondary vegetation",
     "Plantation forest",
     "Pasture",
@@ -910,7 +935,7 @@ realm_land_uses[["Neotropic"]] <-
   )
 realm_land_uses[["Palearctic"]] <-
   c(
-    "Primary vegetation",
+    "Primary forest",
     "Secondary vegetation",
     "Plantation forest",
     "Pasture",
@@ -1019,10 +1044,13 @@ TPD_forage_mapped <- readRDS("../Outputs/TPD_forage_mapping.rds")
 TPD_forage_mapped_random <-
   readRDS("../Outputs/TPD_forage_mapping_random.rds")
 
+
+
+
 ## then we can plot this out so we can visulaise how the dietary guilds are distributed across trait space, keeping the same example as the previous plot lets have a look at primary forest in the Afrotropics
 
 
-map_data <- TPD_forage_mapped[["Neotropic"]][["Primary vegetation"]]
+map_data <- TPD_forage_mapped[["Neotropic"]][["Primary forest"]]
 
 TPD_forage_mapping_plot(
   data = PREDICTS_tpds,
@@ -1054,6 +1082,8 @@ for (r in realms) {
     TPD_map <- TPD_forage_mapped[[r]][[LU]]
     
     
+    
+    
     COM_df <-
       centre_of_mass_for(
         data = PREDICTS_tpds,
@@ -1081,7 +1111,8 @@ write_rds(x = COM_list, file = "../Outputs/Centre_of_Mass_list.rds")
 land_use_colours <-
   data.frame(
     land_use = c(
-      "Primary vegetation",
+      "Primary forest",
+      "Primary non-forest",
       "Secondary vegetation",
       "Plantation forest",
       "Cropland",
@@ -1090,6 +1121,7 @@ land_use_colours <-
     ),
     LU_col = c(
       "olivedrab4",
+      "chartreuse4",
       "olivedrab3",
       "lightgreen",
       "gold1",
@@ -1187,7 +1219,8 @@ for (r in realms) {
 
 land_uses <-
   c(
-    "Primary vegetation",
+    "Primary forest",
+    "Primary non-forest",
     "Secondary vegetation",
     "Plantation forest",
     "Pasture",
@@ -1259,7 +1292,8 @@ dev.off()
 
 COM_coords <- COM_point_df %>%
   dplyr::mutate(
-    colour = ifelse(Land_use == "Primary vegetation", "green4", NA),
+    colour = ifelse(Land_use == "Primary forest", "green4", NA),
+    colour = ifelse(Land_use == "Primary non-forest", "chartreuse4", NA),
     colour = ifelse(Land_use == "Secondary vegetation", "olivedrab3", colour),
     colour = ifelse(Land_use == "Plantation forest", "lightgreen", colour),
     colour = ifelse(Land_use == "Pasture", "khaki", colour),
@@ -1348,7 +1382,7 @@ for (r in realms) {
 COM_mod_data <-
   COM_coords %>% dplyr::mutate(
     Land_use = factor(Land_use),
-    Land_use = relevel(Land_use, ref = "Primary vegetation")
+    Land_use = relevel(Land_use, ref = "Primary forest")
   )
 
 
@@ -1387,7 +1421,7 @@ COM_group_mod$Trophic_niche <-
 
 COM_group_mod$Land_use <- factor(COM_group_mod$Land_use)
 COM_group_mod$Land_use <-
-  relevel(COM_group_mod$Land_use, ref = "Primary vegetation")
+  relevel(COM_group_mod$Land_use, ref = "Primary forest")
 
 
 
@@ -1411,6 +1445,8 @@ lala <- summary(test_2_mod)$contrasts
 There are some good things to talk about here but I am going to move on swiftly now and inspect this later to look at how filled these distinct areas of trait space are compared to null communities.
 
 ```{r proportional occupancy of foraging trait space}
+
+
 
 
 
@@ -1463,7 +1499,7 @@ for (r in realms) {
     prop_occ <- rbind(prop_occ, td_row)
     
     prop_occ$land_use <- LU
-    prop_occ$realm = r
+    prop_occ$realm <- r
     
     prop_occ_df <- rbind(prop_occ_df, prop_occ)
     
@@ -1475,11 +1511,14 @@ for (r in realms) {
   
 }
 
+```
 
+```{r}
 
 land_uses <-
   c(
-    "Primary vegetation",
+    "Primary forest",
+    "Primary non-forest",
     "Secondary vegetation",
     "Plantation forest",
     "Pasture",
@@ -1533,8 +1572,8 @@ prop_plot <-
     shape = 21,
     fill = prop_occ_plot_df$colour
   ) +
-  scale_y_continuous(limits = c(-0.1, 0.55),
-                     breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5)) +
+  #scale_y_continuous(limits = c(-0.1, 0.55),
+  #                   breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5)) +
   geom_hline(yintercept = 0,
              linetype = "dotted",
              colour = "black") +
@@ -1578,10 +1617,10 @@ plot_df$Trophic_niche <-
 
 plot_df$land_use <- factor(plot_df$land_use)
 plot_df$land_use <-
-  relevel(plot_df$land_use, ref = "Primary vegetation")
+  relevel(plot_df$land_use, ref = "Primary forest")
 
 test_mod <-
-  glm(car::logit(similarity) ~ land_use + Trophic_niche, data = plot_df)
+  glm(scale(car::logit(similarity))[,1] ~ land_use + Trophic_niche, data = plot_df)
 
 
 test_2 <-
