@@ -1187,7 +1187,7 @@ mean_redundancy <- full_redundancy_frame %>%
   group_by(Trophic_niche,land_use) %>% 
   dplyr::summarise(redundancy = mean(redundancy)) %>%
   dplyr::mutate(
-    land_use = factor(land_use, levels = land_uses),
+    land_use = factor(land_use, levels = c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban")),
     colour = ifelse(Trophic_niche == "In", "mediumblue", "black"),
     colour = ifelse(Trophic_niche == "Fr", "red2", colour),
     colour = ifelse(Trophic_niche == "Gr", "orange2", colour),
@@ -1267,6 +1267,10 @@ pairwise_redundancy_model <-
   lsmeans(redundancy_model, pairwise ~ land_use * Trophic_niche, adjust = "tukey")
 
 pairwise_contrasts <- summary(pairwise_redundancy_model)$contrasts
+
+
+
+
 
 ```
 
