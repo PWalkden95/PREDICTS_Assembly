@@ -27,7 +27,9 @@ rm(list = ls())
 
 require(mgcv) ## to perform GAMs
 require(tidyverse) ## for data  wrangling and piping
-
+require(lme4)
+require(emmeans)
+library(lmerTest)
 
 
 source("../Functions/TPD_3D_plots.R") ## my very own TPD functions
@@ -45,7 +47,7 @@ PREDICTS_randomisations <-
 PREDICTS_full <- readRDS("../Outputs/refined_predicts.rds")
 
 PREDICTS <- PREDICTS_full %>%  ## PREDICTS data
-  dplyr::distinct(SSBS, Predominant_habitat, Realm, SS,Location) %>% ## pull out land_use type, Subregion, realm etc
+  dplyr::distinct(SSBS, Predominant_habitat, Realm, SS,Location,Biome) %>% ## pull out land_use type, Subregion, realm etc
   dplyr::mutate(
     Predominant_habitat = ifelse(
       grepl(
@@ -55,8 +57,17 @@ PREDICTS <- PREDICTS_full %>%  ## PREDICTS data
       ),
       "Secondary vegetation",
       paste(Predominant_habitat)
-    )
-  ) %>% data.frame() ## merge all secondary sites together
+    ),Predominant_habitat = ifelse(
+      grepl(
+        Predominant_habitat,
+        pattern = "primary forest",
+        ignore.case = TRUE
+      ),
+      "Primary vegetation",
+      paste(Predominant_habitat))
+  ) %>% dplyr::filter(Predominant_habitat != "Primary non-forest") %>%
+  #dplyr::filter(!(!grepl(Biome, pattern = "forest",ignore.case = TRUE) & grepl(Predominant_habitat, pattern = "vegetation"))) %>% 
+  data.frame() ## merge all secondary sites together
 
 
 
@@ -68,12 +79,11 @@ table(TPD_land_uses$Predominant_habitat, TPD_land_uses$Realm)
 
 land_uses <-
   c(
-    "Primary forest",
-    "Primary non-forest",
+    "Primary vegetation",
     "Secondary vegetation",
+    "Plantation forest",
     "Pasture",
     "Cropland",
-    "Plantation forest",
     "Urban"
   )
 realms <-
@@ -81,8 +91,8 @@ realms <-
     "Afrotropic",
     "Palearctic",
     "Nearctic",
-    "Indo-Malay",
-    "Australasia")
+    "Australasia",
+    "Indo-Malay")
 
 
 land_use_colours <-
@@ -90,11 +100,10 @@ land_use_colours <-
     land_use = land_uses,
     colours = c(
       "chartreuse4",
-      "chartreuse2",
       "olivedrab2",
+       "springgreen2",
       "#EBF787",
       "#E3D438",
-      "springgreen2",
       "#718879"
     )
   )
@@ -108,6 +117,7 @@ This analysis will be based on the Land-Use Realm system hypervolumes to be able
 
 ```{r pressure, echo=FALSE}
 
+if(!any(grepl(list.files("../Outputs/"),pattern = "realm_level_hole_dbscan_forest.rds"))){
 
 
 realm_level_hole_frame <- c() # Empty data frame
@@ -126,8 +136,9 @@ for (land_use in land_uses) {
         data = PREDICTS_tpds,
         randata = PREDICTS_randomisations,
         sites = sites,
-        threshold = 1,
-        minimum_points = 10
+        threshold = 0.99,
+        minimum_points = 5,
+        iteration = 0.1
       )
 
     hole_data <- LU_holes$internal$metrics_frame
@@ -142,10 +153,10 @@ for (land_use in land_uses) {
 }
 
 write_rds(file = "../Outputs/realm_level_hole_dbscan_forest.rds", realm_level_hole_frame)
-
+} else {
 
 realm_level_hole_frame <- readRDS("../Outputs/realm_level_hole_dbscan_forest.rds")
-
+}
 ```
 
 
@@ -161,8 +172,7 @@ realm_level_hole_frame$land_use <-
   factor(
     realm_level_hole_frame$land_use,
     levels = c(
-      "Primary forest",
-      "Primary non-forest",
+      "Primary vegetation",
       "Secondary vegetation",
       "Plantation forest",
       "Pasture",
@@ -180,41 +190,84 @@ modelling_hole_dataframe <-
       realm_level_hole_frame$realm == "Nearctic" |
       realm_level_hole_frame$land_use == "Plantation forest" &
       realm_level_hole_frame$realm == "Nearctic" |
-      realm_level_hole_frame$land_use == "Urban" &
-      realm_level_hole_frame$realm == "Australasia" |
-      realm_level_hole_frame$land_use == "Plantation forest" &
-      realm_level_hole_frame$realm == "Australasia" |
-      realm_level_hole_frame$land_use == "Cropland" &
-      realm_level_hole_frame$realm == "Australasia" |
       realm_level_hole_frame$land_use == "Pasture" &
       realm_level_hole_frame$realm == "Indo-Malay" |
       realm_level_hole_frame$land_use == "Urban" &
-      realm_level_hole_frame$realm == "Indo-Malay" |
-      realm_level_hole_frame$land_use == "Primary non-forest" &
-      realm_level_hole_frame$realm == "Neotropic" |
-      realm_level_hole_frame$land_use == "Primary non-forest" &
-      realm_level_hole_frame$realm == "Palearctic" |
-      realm_level_hole_frame$land_use == "Primary non-forest" &
-      realm_level_hole_frame$realm == "Indo-Malay"  
-  ), ]
+      realm_level_hole_frame$realm == "Indo-Malay"|
+            realm_level_hole_frame$land_use == "Plantation forest" &
+      realm_level_hole_frame$realm == "Australasia"|
+            realm_level_hole_frame$land_use == "Cropland" &
+      realm_level_hole_frame$realm == "Australasia"
+    ), ]
 
 
+## brilliant this shows that there is no multi-colinearity so good to go ahead with the modelling
+
+
+
+volume_boxplot_data <- modelling_hole_dataframe %>% group_by(land_use) %>% dplyr::summarise(hypervolume_occupancy = unique(hypervolume_occupancy))
+
+volume_boxplot_data$land_use <- factor(volume_boxplot_data$land_use, levels = land_uses)
+
+boxy <- ggplot(data = volume_boxplot_data, aes( x = land_use, y = hypervolume_occupancy, group = land_use)) +
+  stat_boxplot(geom = "errorbar", size = 0.5,width = 0.3) +
+  geom_boxplot(aes(fill = land_use), show.legend = FALSE, size = 1, width = 0.3, outlier.shape = NA ) +
+  scale_fill_manual(values = land_use_colours[land_uses, "colours"]) +
+  scale_y_continuous(limits = c(0, 20),
+                     breaks = c(0, 5, 10,15,20)) +
+  theme(panel.background = element_rect(fill = 'white', color = 'white'),
+panel.grid.major = element_line(color = 'white'),
+panel.grid.minor = element_line(color = "white"),
+ axis.title.y = element_blank(),
+ axis.text.y = element_blank(),
+axis.line = element_line(colour = "black", linetype = "solid"),
+ #axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+  #  axis.ticks.x = element_blank(),
+    axis.text.x = element_blank())
+
+
+plot(boxy)
+
+
+png(
+  filename =
+    "../Figures/plots_for_figures/realm_level_boxplot.png",
+  width = 300,
+  height = 100,
+  units = "mm",
+  res = 500
+)
+
+plot(boxy)
+dev.off()
+
+
+realm_hyper_size <- glm(hypervolume_occupancy ~ land_use, data = volume_boxplot_data )
+
+summary(realm_hyper_size)
+
+```
+
+
+
+```{r}
 ## Let's have a look at the total hole volume
 
 
-hist(scale(modelling_hole_dataframe$total_hole_volume), breaks = 20)
+hist(modelling_hole_dataframe$total_hole_volume, breaks = 20)
 
 
-hist(scale(sqrt(modelling_hole_dataframe$total_hole_volume)), breaks = 20)
+hist(sqrt(modelling_hole_dataframe$total_hole_volume), breaks = 20)
 
-hist(scale(log(modelling_hole_dataframe$total_hole_volume)), breaks = 20)
+hist(log(modelling_hole_dataframe$total_hole_volume), breaks = 20)
 
 ### out of these three I think the sqrt transformation is the best 
 
 
 ## looks okay let's just scale it to have a standard deviation of 1 and a mean of 0
 
-#modelling_hole_dataframe$total_hole_volume <- scale(sqrt(modelling_hole_dataframe$total_hole_volume))[,1]
+modelling_hole_dataframe$total_hole_volume <- modelling_hole_dataframe$total_hole_volume
 
 
 ## the size of the observed hypervolume 
@@ -236,10 +289,12 @@ modelling_hole_dataframe$hypervolume_occupancy <- scale(log(modelling_hole_dataf
 
 source("https://highstat.com/Books/Book2/HighstatLibV10.R")
 
-corvif(modelling_hole_dataframe[,c("total_hole_volume","hypervolume_occupancy","land_use")])
+corvif(modelling_hole_dataframe[,c("hypervolume_occupancy","land_use", "radius")])
 
 
-## brilliant this shows that there is no multi-colinearity so good to go ahead with the modelling
+
+
+
 
 ```
 ## Pre-modelling
@@ -274,6 +329,9 @@ plot(hole_volume_occupancy)
 ## Just looking at the top values here the realtionship is looking a lot more linear with increase observed hypervolume size the larger the observed hole may be.
 
 
+
+
+
 ```
 ## Modelling
 
@@ -286,20 +344,44 @@ A generalised additive model (GAM) taking total hole volume as a function of lan
 ```{r modelling}
 
 
-hole_volume_gam <- mgcv::gam(
-  total_hole_volume ~ s(radius) +
-    #s(radius, by = land_use) +
-    hypervolume_occupancy +
-    #te(hypervolume_occupancy,radius)+
-    hypervolume_occupancy:land_use  +
-    land_use,
-  data = modelling_hole_dataframe,
-  method = "REML"
-)
 
 
-summary(hole_volume_gam)
-anova(hole_volume_gam)
+#### lets have a look at a different model structure modelling total hole volume as a function of land use, hypervolume size while taking radius as a random effect
+#### 
+
+linear_modelling_dataframe <- modelling_hole_dataframe
+
+
+## Will need to make radius a factor to indlude as random effect
+
+
+linear_modelling_dataframe$radius <- factor(linear_modelling_dataframe$radius, ordered = TRUE)
+
+
+linear_hole_model <- lmer(total_hole_volume ~ land_use + hypervolume_occupancy  +(1|radius), data = linear_modelling_dataframe )
+
+
+summary(linear_hole_model)
+car::Anova(linear_hole_model)
+
+AIC(linear_hole_model)
+
+
+linear_hole_model_slope <- lmer(total_hole_volume ~ land_use + hypervolume_occupancy + (land_use|radius), data = linear_modelling_dataframe ) 
+
+
+AIC(linear_hole_model_slope) ## higher AIC
+
+
+
+linear_hole_model_slope_2 <- lmer(total_hole_volume ~ land_use + hypervolume_occupancy + (hypervolume_occupancy|radius), data = linear_modelling_dataframe )
+
+
+AIC(linear_hole_model_slope_2)
+
+
+summary(linear_hole_model_slope_2)
+car::Anova(linear_hole_model_slope_2)
 
 ```
 ## Hole volume summary
@@ -317,41 +399,150 @@ land_use_plot <- c()
 
 median_volume <- median(unique(modelling_hole_dataframe$hypervolume_occupancy))
 
-median_radius <- median(unique(modelling_hole_dataframe$radius))
+
 
 
 
 for(land_use in land_uses){
   
+ # median_volume <- median(unique(modelling_hole_dataframe$hypervolume_occupancy[modelling_hole_dataframe$land_use == land_use]))
     
-
-  data <- data.frame(land_use = land_use, predict(hole_volume_gam, newdata = data.frame(radius = median_radius,
+    
+ 
+  data <- rbind(data.frame(land_use = land_use, fit = predict(linear_hole_model, newdata = data.frame(
                                                                                         land_use = land_use,
-                                                                                        hypervolume_occupancy = median_volume), se.fit = TRUE))
+                                                                                        hypervolume_occupancy = median_volume), re.form = NA)),
     
+  
+   data.frame(land_use = "Primary vegetation", fit = predict(linear_hole_model, newdata = data.frame(
+                                                                                        land_use = "Primary vegetation",
+                                                                                        hypervolume_occupancy = median_volume), re.form = NA)))
+  
+  
+ # data$lower <- data$fit - data$se.fit
+#data$upper <- data$fit + data$se.fit
+
+data$fit <- data$fit 
+
+#data$lower <- data$lower / data$fit[data$land_use == "Primary vegetation"]
+#data$upper <- data$upper /  data$fit[data$land_use == "Primary vegetation"]
+
+
+#data$se.fit <- data$se.fit / data$fit[data$land_use == "Primary vegetation"]
+data[,2] <- data[,2] / data[data$land_use == "Primary vegetation",2]
+
+  data <- data[-2,]
   
   land_use_plot <- rbind(land_use_plot,data)
   
 }
 
 
+data <- data.frame(land_use = c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban"), hypervolume_occupancy = median_volume)
 
 
-land_use_plot$fit <- land_use_plot$fit - land_use_plot[land_use_plot$land_use == "Primary forest", "fit"]
-land_use_plot$lower <- land_use_plot$fit - land_use_plot$se.fit
-land_use_plot$upper <- land_use_plot$fit + land_use_plot$se.fit
 
-land_use_plot$land_use <- factor(land_use_plot$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+    
+    pred_fun <- function(x) {
+      as.numeric(predict(x, newdata = data, re.form = NA))
+    }
+    
+    
+    
+      
+    
+      
+      
+      
+      data$estimate <- NA
+      data$upper <- NA
+      data$lower <- NA
+      
+      booted_mod <-
+        bootMer(
+          linear_hole_model,
+          FUN = function(x)
+            pred_fun(x),
+          nsim = 200,seed = 1234
+        )
 
 
-land_use_effect_plot <- ggplot(data = land_use_plot, aes(x = land_use, y = fit, colour = land_use )) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_errorbar(aes(ymin= lower , ymax= upper), colour="black", width=.1, position=position_dodge(0.5), linetype = 1) +
-  geom_point(size = 5)  +
-  theme_classic()
+
+      data$estimate <- booted_mod$t0
+bootstraps <- booted_mod$t      
+      
 
 
-plot(land_use_effect_plot)
+  ninety_five_boot <- c()
+      
+      for (col in 1:ncol(bootstraps)) {
+        trim_col <- bootstraps[, col]
+        
+        trim_col <-
+          trim_col[trim_col > as.numeric(quantile(bootstraps[, col], 0)) &
+                     trim_col < as.numeric(quantile(bootstraps[, col], 1))]
+        
+        
+        ninety_five_boot <- cbind(ninety_five_boot, trim_col)
+        
+      }
+
+  ninety_five_boot <- ninety_five_boot/median(ninety_five_boot[,1])
+  
+
+  ninety_five_boot <- data.frame(ninety_five_boot)
+  
+  colnames(ninety_five_boot) <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban")
+  
+  
+  
+  
+  
+   boot_plot <-
+        ninety_five_boot %>% pivot_longer(cols = colnames(ninety_five_boot), names_to = "land_use")
+      
+   
+
+boot_plot$land_use <- factor(boot_plot$land_use, levels = land_uses)   
+      
+   
+   realm_size_plot <- ggplot(data = boot_plot, aes(x = land_use, y = value, group = land_use)) +
+     geom_violin(aes(colour = land_use, fill = land_use), alpha = 0.5, show.legend = FALSE)+
+     geom_boxplot(width = 0.3, aes( fill = land_use), show.legend = FALSE) +
+     scale_colour_manual(values = land_use_colours[land_uses, "colours"]) +
+     scale_fill_manual(values = land_use_colours[land_uses, "colours"]) +
+      scale_y_continuous(limits = c(0.2, 2.2),
+                     breaks = c(0.5,1,1.5,2)) +
+     theme(panel.background = element_rect(fill = 'white', color = 'white'),
+panel.grid.major = element_line(color = 'white'),
+panel.grid.minor = element_line(color = 'white'),
+  axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    #axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+axis.line = element_line(colour = "black", linetype = "solid"),
+    #axis.ticks.x = element_blank(),
+    axis.text.x = element_blank())
+  
+  
+plot(realm_size_plot)  
+  
+
+
+png(
+  filename =
+    "../Figures/plots_for_figures/realm_level_hole_volume.png",
+  width = 200,
+  height = 150,
+  units = "mm",
+  res = 500
+)
+plot(realm_size_plot)
+dev.off()
+
+  
+  
+
 
 ```
 
@@ -360,89 +551,7 @@ plot(land_use_effect_plot)
 ```{r observing GAM results}
 
 
-gamm_plot_radius <- c()
 
-
-
-for (land_use in land_uses) {
-  
-  
-  land_use_data <-
-    modelling_hole_dataframe[modelling_hole_dataframe$land_use == land_use, "radius"]
-  
-  #hyper_size <- range(unique(realm_level_hole_frame_2[realm_level_hole_frame_2$land_use == land_use, "hypervolume_occupancy"]))
-  #hyper_size <- seq(hyper_size[1],hyper_size[2], length.out = 100)
-  
-  
-  for (i in land_use_data) {
-   #   median_volume <- median(unique(modelling_hole_dataframe[modelling_hole_dataframe$land_use == land_use,"hypervolume_occupancy"]))
-  median_volume <-
-      median(unique(modelling_hole_dataframe$hypervolume_occupancy))
-    
-    
-    data <- data.frame(
-      radius = i,
-      land_use = land_use,
-      predict(
-        hole_volume_gam,
-        newdata = data.frame(
-          radius = i,
-          land_use = land_use,
-          hypervolume_occupancy = median_volume
-        ),
-        se.fit = TRUE
-      )
-    )
-    
-    gamm_plot_radius <- rbind(gamm_plot_radius, data)
-  }
-}
-
-
-gamm_plot_radius$land_use <-
-  factor(
-    gamm_plot_radius$land_use,
-    levels = c(
-      "Primary forest",
-      "Primary non-forest",
-      "Secondary vegetation",
-      "Pasture",
-      "Cropland",
-      "Plantation forest",
-      "Urban"
-    )
-  )
-
-gamm_plot_radius$fit <- gamm_plot_radius$fit
-gamm_plot_radius$se.fit <- gamm_plot_radius$se.fit
-
-gamm_plot_radius$upper <-
-  gamm_plot_radius$fit + gamm_plot_radius$se.fit
-gamm_plot_radius$lower <-
-  gamm_plot_radius$fit - gamm_plot_radius$se.fit
-
-
-
-radius_volume_plot <-
-  ggplot(data = gamm_plot_radius, aes(x = radius, y = fit, group = land_use)) +
-  #geom_point(data = realm_level_radius_data, aes( x = radius, y = mean_hole_volume, colour = land_use), alpha = 0.7, size = 3) +
-  geom_line(size = 1.5,aes(colour = land_use)) +
-  geom_ribbon(aes(
-    ymin = lower,
-    ymax = upper,
-    fill = land_use
-  ),
-  alpha = 0.5, show.legend = FALSE) +
-  scale_colour_manual(values = land_use_colours[as.character(unique(gamm_plot_radius$land_use)), "colours"]) +
-  scale_fill_manual(values = land_use_colours[as.character(unique(gamm_plot_radius$land_use)), "colours"]) +
-  theme(panel.background = element_rect(fill = 'grey', color = 'grey'),
-panel.grid.major = element_line(color = 'grey'),
-panel.grid.minor = element_line(color = 'grey')) +
-  xlab("Radius") +
-  ylab("Total Hole Volume")
-
-
-plot(radius_volume_plot)
 
 ```
 
@@ -472,22 +581,17 @@ for (land_use in land_uses) {
   
   for (i in hyper_size) {
     
-    median_radius <-
-      round(median(unique(modelling_hole_dataframe[modelling_hole_dataframe$land_use == land_use, "radius"])), digits = 2)
-    #  mean_volume <- median(unique(realm_level_hole_frame_2$hypervolume_occupancy))
-    #mean_radius <- round(median(unique(realm_level_hole_frame_2$radius)),digits = 2)
     
     data <- data.frame(
       hypervolume_occupancy = i,
       land_use = land_use,
-      predict(
-        hole_volume_gam,
+      fit = predict(
+        linear_hole_model,
         newdata = data.frame(
-          radius = median_radius,
           land_use = land_use,
           hypervolume_occupancy = i
         ),
-        se.fit = TRUE
+        re.form = NA
       )
     )
     
@@ -501,40 +605,20 @@ gamm_plot_hypervolume_occupancy$land_use <-
   factor(
     gamm_plot_hypervolume_occupancy$land_use,
     levels = c(
-      "Primary forest",
-      "Primary non-forest",
+      "Primary vegetation",
       "Secondary vegetation",
+      "Plantation forest",
       "Pasture",
       "Cropland",
-      "Plantation forest",
       "Urban"
     )
   )
 
-gamm_plot_hypervolume_occupancy$upper <-
-  gamm_plot_hypervolume_occupancy$fit + gamm_plot_hypervolume_occupancy$se.fit
-gamm_plot_hypervolume_occupancy$lower <-
-  gamm_plot_hypervolume_occupancy$fit - gamm_plot_hypervolume_occupancy$se.fit
 
 
-radius_points <- c()
-
-for (land_use in land_uses) {
-  mean_radius <-
-    round(median(unique(modelling_hole_dataframe[modelling_hole_dataframe$land_use == land_use, "radius"])), digits = 2)
-  
-  radius_data <-
-    modelling_hole_dataframe %>% dplyr::mutate(radius = as.character(radius)) %>%
-    dplyr::filter(radius == as.character(median_radius))
-  
-  radius_data <- radius_data[radius_data$land_use == land_use,]
-  
-  radius_points <- rbind(radius_points, radius_data)
-  
-}
 
 
-gamm_plot_hypervolume_occupancy <- gamm_plot_hypervolume_occupancy %>% dplyr::filter(land_use %in% as.character(unique(radius_points$land_use)))
+
 
 
 
@@ -542,30 +626,22 @@ gamm_plot_hypervolume_occupancy <- gamm_plot_hypervolume_occupancy %>% dplyr::fi
 hypervolume_hole_plot <-
   ggplot(data = gamm_plot_hypervolume_occupancy, aes(x = hypervolume_occupancy, y = fit, group = land_use)) +
   geom_line(size = 1.5,aes(colour = land_use), show.legend = FALSE) +
-  geom_ribbon(
-    aes(
-      ymin = lower,
-      ymax = upper,
-      fill = land_use
-    ),
-    alpha = 0.6,
-    show.legend = FALSE
-  ) +
-    geom_point(
-    data = radius_points,
-    aes(x = hypervolume_occupancy, y = total_hole_volume, colour = land_use)
-    ,
-    size = 8,
-    alpha = 0.6,
-    show.legend = FALSE
-  ) +
+  
+  #   geom_point(
+  #   data = radius_points,
+  #   aes(x = hypervolume_occupancy, y = total_hole_volume, colour = land_use)
+  #   ,
+  #   size = 8,
+  #   alpha = 0.6,
+  #   show.legend = FALSE
+  # ) +
   scale_colour_manual(values = land_use_colours[as.character(unique(gamm_plot_hypervolume_occupancy$land_use)), "colours"]) +
   scale_fill_manual(values = land_use_colours[as.character(unique(gamm_plot_hypervolume_occupancy$land_use)), "colours"]) +
   ylab("Total Hole Volume") +
   xlab("Hypervolume occupancy") +
-  theme(panel.background = element_rect(fill = 'grey', color = 'grey'),
-        panel.grid.major = element_line(color = 'grey'),
-        panel.grid.minor = element_line(color = 'grey'))# +
+  theme(panel.background = element_rect(fill = 'white', color = 'white'),
+        panel.grid.major = element_line(color = 'white'),
+        panel.grid.minor = element_line(color = 'white'))# +
  # ylim(-4,3)+
 #  xlim(-3,2)
 
@@ -594,24 +670,29 @@ Again this will be a GAM, but this time with a poisson distribution as we are de
 
 ``` {r number of hole GAM}
 
-number_of_holes_model <- mgcv::gam(
-  number_of_holes ~ s(radius) +
-  #  s(radius, by = land_use) +
-    hypervolume_occupancy +
-    hypervolume_occupancy:land_use +
-    #te(hypervolume_occupancy,radius)+
-    # s(hypervolume_occupancy, by = land_use)  +
-    land_use,
-  data = modelling_hole_dataframe,
-  family = "poisson",
-  method = "REML"
-)
+number_of_holes_model <- glmer(number_of_holes ~ hypervolume_occupancy + land_use  + (1|radius), data = realm_level_hole_frame,family = "poisson",control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=100000)) )
 
+
+AIC(number_of_holes_model)
 
 
 summary(number_of_holes_model)
-anova(number_of_holes_model)
+car::Anova(number_of_holes_model)
 
+
+number_of_holes_model_slope <- glmer(number_of_holes ~ hypervolume_occupancy + land_use  + (land_use|radius), data = realm_level_hole_frame,family = "poisson",control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=100000)) )
+
+AIC(number_of_holes_model_slope)
+
+
+summary(number_of_holes_model_slope)
+
+
+
+number_of_holes_model_slope_2 <- glmer(number_of_holes ~ hypervolume_occupancy + land_use  + (hypervolume_occupancy|radius), data = realm_level_hole_frame,family = "poisson",control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=100000)) )
+
+
+AIC(number_of_holes_model_slope_2)
 
 ```
 
@@ -621,41 +702,133 @@ Then additonally, with the number of holes model, compared to primary vegetation
 
 land_use_plot <- c()
 
-median_volume <- median(unique(modelling_hole_dataframe$hypervolume_occupancy))
-
-median_radius <- median(unique(modelling_hole_dataframe$radius))
+median_volume <- mean(unique(modelling_hole_dataframe$hypervolume_occupancy))
 
 
 
 for(land_use in land_uses){
   
     
-
-  data <- data.frame(land_use = land_use, predict(number_of_holes_model, newdata = data.frame(radius = median_radius,
-                                                                                        land_use = land_use,
-                                                                                        hypervolume_occupancy = median_volume), se.fit = TRUE))
     
+ 
+  data <- data.frame(land_use = land_use, fit = predict(number_of_holes_model, newdata = data.frame(
+                                                                                        land_use = land_use,
+                                                                                        hypervolume_occupancy = median_volume), re.form = NA))
   
+
   land_use_plot <- rbind(land_use_plot,data)
   
 }
 
 
-land_use_plot$fit <- land_use_plot$fit - land_use_plot[land_use_plot$land_use == "Primary forest", "fit"]
-land_use_plot$lower <- land_use_plot$fit - land_use_plot$se.fit
-land_use_plot$upper <- land_use_plot$fit + land_use_plot$se.fit
 
-land_use_plot$land_use <- factor(land_use_plot$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+land_use_plot[,2] <- land_use_plot[,2]/land_use_plot$fit[land_use_plot$land_use == "Primary vegetation"]
 
 
-land_use_effect_plot <- ggplot(data = land_use_plot, aes(x = land_use, y = fit, colour = land_use )) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_errorbar(aes(ymin= lower , ymax= upper), colour="black", width=.1, position=position_dodge(0.5), linetype = 1) +
-  geom_point(size = 5)  +
-  theme_classic()
+data <- data.frame(land_use = c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban"), hypervolume_occupancy = median_volume)
 
 
-plot(land_use_effect_plot)
+
+    
+    pred_fun <- function(x) {
+      as.numeric(predict(x, newdata = data, re.form = NA))
+    }
+    
+      
+    
+      
+      
+      
+      data$estimate <- NA
+      data$upper <- NA
+      data$lower <- NA
+      
+      booted_mod <-
+        bootMer(
+          number_of_holes_model,
+            FUN = function(x) pred_fun(x),
+            nsim = 200,seed = 1234
+        )
+
+
+
+      data$estimate <- booted_mod$t0
+      bootstraps <- booted_mod$t      
+      
+
+
+  ninety_five_boot <- c()
+      
+      for (col in 1:ncol(bootstraps)) {
+        trim_col <- bootstraps[, col]
+        
+        trim_col <-
+          trim_col[trim_col > as.numeric(quantile(bootstraps[, col], 0)) &
+                     trim_col < as.numeric(quantile(bootstraps[, col], 1))]
+        
+        
+        ninety_five_boot <- cbind(ninety_five_boot, trim_col)
+        
+      }
+
+  ninety_five_boot <- ninety_five_boot/median(ninety_five_boot[,1])
+
+  ninety_five_boot <- data.frame(ninety_five_boot)
+  
+  colnames(ninety_five_boot) <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban")
+  
+  
+  
+  
+  
+   boot_plot <-
+        ninety_five_boot %>% pivot_longer(cols = colnames(ninety_five_boot), names_to = "land_use")
+      
+   
+
+boot_plot$land_use <- factor(boot_plot$land_use, levels = land_uses)   
+      
+   
+   realm_number_plot <- ggplot(data = boot_plot, aes(x = land_use, y = value, group = land_use)) +
+     geom_violin(aes(colour = land_use, fill = land_use), show.legend = FALSE, alpha = 0.5)+
+     geom_boxplot(width = 0.3, aes( fill = land_use), show.legend = FALSE) +
+      scale_y_continuous(limits = c(-0.8, 3.3),
+                     breaks = c(0, 1, 2,3)) +
+     scale_colour_manual(values = land_use_colours[land_uses, "colours"]) +
+     scale_fill_manual(values = land_use_colours[land_uses, "colours"]) +
+     theme(panel.background = element_rect(fill = 'white', color = 'white'),
+panel.grid.major = element_line(color = 'white'),
+panel.grid.minor = element_line(color = 'white'),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    #axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+axis.line = element_line(colour = "black", linetype = "solid"),
+    #axis.ticks.x = element_blank(),
+    axis.text.x = element_blank())
+  
+  
+
+  plot(realm_number_plot)
+
+  
+
+
+
+
+
+
+png(
+  filename =
+    "../Figures/plots_for_figures/realm_level_hole_number.png",
+  width = 200,
+  height = 150,
+  units = "mm",
+  res = 500
+)
+plot(realm_number_plot)
+dev.off()
+
 
 ```  
 
@@ -668,15 +841,17 @@ so first things first we will need to group sites by study and land use as oppos
 
 ```{r study land use analysis}
 
+if(!any(grepl(list.files("../Outputs/"),pattern = "study_level_hole_dataframe.rds"))){
 
 study_level_hole_frame <- c() # Empty data frame
-
 
 studies <- unique(TPD_land_uses$SS)
 
 for(study in studies){
 
 for (land_use in land_uses) {
+  
+  
   
     sites <-
       TPD_land_uses %>% dplyr::filter(Predominant_habitat == land_use, SS == study) %>% dplyr::distinct(SSBS) %>% pull()
@@ -690,11 +865,16 @@ for (land_use in land_uses) {
         data = PREDICTS_tpds,
         randata = PREDICTS_randomisations,
         sites = sites,
-        threshold = 1,
-        minimum_points = 10
+        threshold = 0.99,
+        minimum_points = 5,
+        iteration = 0.1
       )
 
     hole_data <- LU_holes$internal$metrics_frame
+    
+    if(is_null(hole_data)){
+      next()
+    }
 
     hole_data$land_use <- land_use
     hole_data$SS <- study
@@ -710,7 +890,9 @@ for (land_use in land_uses) {
 
 write_rds(file = "../Outputs/study_level_hole_dataframe.rds", x = study_level_hole_frame)
 
-
+} else {
+  study_level_hole_frame <- readRDS("../Outputs/study_level_hole_dataframe.rds")
+}
 
 
 ```
@@ -721,81 +903,385 @@ write_rds(file = "../Outputs/study_level_hole_dataframe.rds", x = study_level_ho
 
 ```{r mixed effects of land use within study}
 
-study_level_hole_frame <- readRDS("../Outputs/study_level_hole_dataframe.rds")
+
+
+volume_boxplot_data <- study_level_hole_frame %>% dplyr::group_by(land_use) %>%
+  dplyr::summarise(volume = unique(hypervolume_occupancy))
 
 
 
-study_level_hole_frame$land_use <- factor(study_level_hole_frame$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+
+study_level_hole_frame$land_use <- factor(study_level_hole_frame$land_use, levels = c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+
+
+volume_boxplot_data$land_use <- factor(volume_boxplot_data$land_use, levels = c("Primary vegetation",  "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+
+volume_boxplot <- ggplot(data = volume_boxplot_data, aes(x = land_use, y = volume)) +
+  stat_boxplot(geom = "errorbar", size = 0.5, width = 0.3) +
+  geom_boxplot(aes(fill = land_use), show.legend = FALSE, size = 1, width = 0.3, outlier.shape = NA ) +
+  scale_fill_manual(values = land_use_colours[land_uses, "colours"]) +
+  scale_y_continuous(limits = c(0, 8),
+                     breaks = c(0,2,4,6,8 )) +
+  theme(panel.background = element_rect(fill = 'white', color = 'white'),
+panel.grid.major = element_line(color = 'white'),
+panel.grid.minor = element_line(color = 'white'),
+  axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+   # axis.ticks.y = element_blank(),
+  axis.title.x = element_blank(),
+axis.line = element_line(colour = "black", linetype = "solid"),
+   #axis.ticks.x = element_blank(),
+  axis.text.x = element_blank()
+)
+
+
+plot(volume_boxplot)
+
+
+for(land_use in land_uses){
+  print(sum(volume_boxplot_data$land_use == land_use))
+}
+
+
+png(
+  filename =
+    "../Figures/plots_for_figures/study_level_boxplot.png",
+  width = 300,
+  height = 100,
+  units = "mm",
+  res = 500
+)
+plot(volume_boxplot)
+dev.off()
+
+
+site_hyper_size <- glm(volume ~ land_use, data =volume_boxplot_data)
+
+summary(site_hyper_size)
+
+```
+
+
+```{r}
+
+hist(sqrt(study_level_hole_frame$total_hole_volume))
+hist(log(study_level_hole_frame$total_hole_volume))
+hist(study_level_hole_frame$total_hole_volume)
 
 
 
-hist(scale(sqrt(study_level_hole_frame$total_hole_volume))[,1])
-hist(scale(log(study_level_hole_frame$total_hole_volume))[,1])
-hist(scale(study_level_hole_frame$total_hole_volume)[,1])
 
-study_level_hole_frame$total_hole_volume <- scale(log(study_level_hole_frame$total_hole_volume))[,1]
+
+study_level_hole_frame$total_hole_volume <- sqrt(study_level_hole_frame$total_hole_volume)
 
 
 
 hist(log(study_level_hole_frame$hypervolume_occupancy))
 
 
+
+
+
+
 study_level_hole_frame$hypervolume_occupancy <- scale(log(study_level_hole_frame$hypervolume_occupancy))[,1]
 
 
-gam <- gamm4::gamm4(total_hole_volume ~ s(radius) + 
-                      #s(radius, by = land_use) +
-                      hypervolume_occupancy + hypervolume_occupancy:land_use +
-                      land_use, random = ~(1|SS), data = study_level_hole_frame, REML = TRUE)
+study_level_hole_frame$radius <- factor(study_level_hole_frame$radius, ordered = TRUE)
 
 
 
 
-summary(gam$gam)
-anova(gam$gam)
+radius_hole_volume <- ggplot(data = study_level_hole_frame, aes(x = radius, y = total_hole_volume, colour = land_use))+
+  geom_point()+
+  facet_grid(.~realm)
+
+
+plot(radius_hole_volume)
+
+
+## right this looks non-linear so looking like we are going to need a non-linear modelling approach I'm thinkin generalised linear models (GAMs)
+
+
+hole_volume_occupancy <- ggplot(data = study_level_hole_frame, aes(x = hypervolume_occupancy, y = total_hole_volume, colour = land_use)) +
+  geom_point()
+
+
+plot(hole_volume_occupancy)
+
+
+
+## Just looking at the top values here the realtionship is looking a lot more linear with increase observed hypervolume size the larger the observed hole may be.
+
+
+size_model_data <- study_level_hole_frame %>% dplyr::group_by(SS,land_use,realm) %>% dplyr::summarise(hypervolume_occupancy = mean(hypervolume_occupancy))
+
+
+
+
+study_size_model <- lmer(hypervolume_occupancy ~ land_use + (1|SS), data = size_model_data)
+
+
+
+summary(study_size_model)
+
+```
+
+```{r modlling}
 
 
 
 
 
-land_use_plot <- c()
+
+gam <- lmer(total_hole_volume ~ hypervolume_occupancy + 
+                      land_use + (1|SS) + (1|radius) + (1|realm) , data = study_level_hole_frame, control = lmerControl(optimizer = "bobyqa", optCtrl=list(maxfun=100000)))
+
+
+
+
+
+
+summary(gam)
+car::Anova(gam)
+
+
+
+
+
+
 
 median_volume <- median(unique(study_level_hole_frame$hypervolume_occupancy))
 
-median_radius <- median(unique(study_level_hole_frame$radius))
+```
 
+
+```{r}
+
+
+
+```
+
+
+```{r}
+
+
+  land_use_plot <- c()
+
+
+
+median_volume <- median(unique(study_level_hole_frame$hypervolume_occupancy))
 
 
 for(land_use in land_uses){
   
+ #   median_volume <- median(unique(study_level_hole_frame$hypervolume_occupancy[study_level_hole_frame$land_use == #land_use]))
+    
+    
+  data <- data.frame(land_use = land_use,fit = predict(gam, newdata = data.frame(land_use = land_use,
+                                                                                        hypervolume_occupancy = median_volume), re.form = NA))
     
 
-  data <- data.frame(land_use = land_use, predict(gam$gam, newdata = data.frame(radius = median_radius,
-                                                                                        land_use = land_use,
-                                                                                        hypervolume_occupancy = median_volume), se.fit = TRUE, re.form = NA))
-    
   
   land_use_plot <- rbind(land_use_plot,data)
   
 }
 
 
-land_use_plot$fit <- land_use_plot$fit - land_use_plot[land_use_plot$land_use == "Primary forest", "fit"]
-land_use_plot$lower <- land_use_plot$fit - land_use_plot$se.fit
-land_use_plot$upper <- land_use_plot$fit + land_use_plot$se.fit
 
-land_use_plot$land_use <- factor(land_use_plot$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+#land_use_plot$lower <- land_use_plot$fit - land_use_plot$se.fit ^ 2
+#land_use_plot$upper <- land_use_plot$fit + land_use_plot$se.fit ^ 2
 
-
-land_use_effect_plot <- ggplot(data = land_use_plot, aes(x = land_use, y = fit, colour = land_use )) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_errorbar(aes(ymin= lower , ymax= upper), colour="black", width=.1, position=position_dodge(0.5), linetype = 1) +
-  geom_point(size = 5)  +
-  theme_classic()
+land_use_plot[,2] <- land_use_plot[,2] ^ 2
 
 
-plot(land_use_effect_plot)
+#land_use_plot$se.fit <- land_use_plot$se.fit / land_use_plot[land_use_plot$land_use == "Primary vegetation", "fit"]
+#land_use_plot$lower <- land_use_plot$lower / land_use_plot[land_use_plot$land_use == "Primary vegetation", "fit"]
+#land_use_plot$upper <- land_use_plot$upper / land_use_plot[land_use_plot$land_use == "Primary vegetation", "fit"]
 
+land_use_plot[,2] <- land_use_plot[,2] / land_use_plot[land_use_plot$land_use == "Primary vegetation", 2]
+
+
+
+
+
+data <- data.frame(land_use = c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban"), hypervolume_occupancy = median_volume)
+
+
+
+    
+    pred_fun <- function(x) {
+      as.numeric(predict(x, newdata = data, re.form = NA))
+    }
+    
+    
+    
+      
+    
+      
+      
+      
+      data$estimate <- NA
+      data$upper <- NA
+      data$lower <- NA
+      
+      booted_mod <-
+        bootMer(
+          gam,
+          FUN = function(x)
+            pred_fun(x),
+          nsim =  200,seed = 1234
+        )
+
+
+
+      data$estimate <- booted_mod$t0 ^ 2
+      bootstraps <- booted_mod$t      ^ 2
+      
+
+
+  ninety_five_boot <- c()
+      
+      for (col in 1:ncol(bootstraps)) {
+        trim_col <- bootstraps[, col]
+        
+        trim_col <-
+          trim_col[trim_col > as.numeric(quantile(bootstraps[, col], 0)) &
+                     trim_col < as.numeric(quantile(bootstraps[, col], 1))]
+        
+        
+        ninety_five_boot <- cbind(ninety_five_boot, trim_col)
+        
+      }
+
+ ninety_five_boot <- ninety_five_boot/median(ninety_five_boot[,1])
+  
+
+  ninety_five_boot <- data.frame(ninety_five_boot)
+  
+  colnames(ninety_five_boot) <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban")
+  
+  
+  
+  
+  
+   boot_plot <-
+        ninety_five_boot %>% pivot_longer(cols = colnames(ninety_five_boot), names_to = "land_use")
+      
+   
+
+boot_plot$land_use <- factor(boot_plot$land_use, levels = land_uses)   
+      
+   
+   study_volume_plot <- ggplot(data = boot_plot, aes(x = land_use, y = value, group = land_use)) +
+     geom_violin(aes(colour = land_use, fill = land_use), show.legend = FALSE, alpha = 0.5,scale = "area", position = position_dodge(1))+
+     geom_boxplot(width = 0.3, aes( fill = land_use), show.legend = FALSE) +
+     scale_colour_manual(values = land_use_colours[land_uses, "colours"]) +
+     scale_fill_manual(values = land_use_colours[land_uses, "colours"]) +
+      scale_y_continuous(limits = c(0.3, 1.73),
+                     breaks = c(0.75,1,1.25,1.5)) +
+     theme(panel.background = element_rect(fill = 'white', color = 'white'),
+panel.grid.major = element_line(color = 'white'),
+panel.grid.minor = element_line(color = 'white'),
+  axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    #axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+axis.line = element_line(colour = "black", linetype = "solid"),
+    #axis.ticks.x = element_blank(),
+    axis.text.x = element_blank())
+  
+  
+plot(study_volume_plot) 
+  
+
+
+
+
+png(
+  filename =
+    "../Figures/plots_for_figures/study_level_hole_volume.png",
+  width = 200,
+  height = 150,
+  units = "mm",
+  res = 500
+)
+plot(study_volume_plot)
+dev.off()
+```
+
+
+```{r study level gam radius}
+
+
+
+```
+
+
+```{r}
+
+gamm_plot_hypervolume_occupancy <- c()
+
+
+for (land_use in land_uses) {
+  #land_use_data <- realm_level_hole_frame_2[realm_level_hole_frame_2$land_use == land_use,"radius"]
+  
+  hyper_size <-
+    range(unique(study_level_hole_frame[study_level_hole_frame$land_use == land_use, "hypervolume_occupancy"]))
+  hyper_size <- seq(hyper_size[1], hyper_size[2], length.out = 100)
+  
+  
+  for (i in hyper_size) {
+    
+    
+    data <- data.frame(
+      hypervolume_occupancy = i,
+      land_use = land_use,
+      fit = predict(
+        gam,
+        newdata = data.frame(
+          land_use = land_use,
+          hypervolume_occupancy = i
+        ),
+        re.form = NA
+      )
+    )
+    
+    gamm_plot_hypervolume_occupancy <-
+      rbind(gamm_plot_hypervolume_occupancy, data)
+  }
+}
+
+
+gamm_plot_hypervolume_occupancy$land_use <-
+  factor(
+    gamm_plot_hypervolume_occupancy$land_use,
+    levels = c(
+      "Primary vegetation",
+      
+      "Secondary vegetation",
+      "Plantation forest",
+      "Pasture",
+      "Cropland",
+      "Urban"
+    )
+  )
+
+
+
+hypervolume_hole_plot <-
+  ggplot(data = gamm_plot_hypervolume_occupancy, aes(x = hypervolume_occupancy, y = fit ^ 2, group = land_use)) +
+  geom_line(size = 1.5,aes(colour = land_use), show.legend = FALSE) +
+    scale_colour_manual(values = land_use_colours[as.character(unique(gamm_plot_hypervolume_occupancy$land_use)), "colours"]) +
+  ylab("Total Hole Volume") +
+  xlab("Hypervolume occupancy") +
+  theme(panel.background = element_rect(fill = 'white', color = 'white'),
+        panel.grid.major = element_line(color = 'white'),
+        panel.grid.minor = element_line(color = 'white'))# +
+ # ylim(-4,3)+
+#  xlim(-3,2)
+
+
+plot(hypervolume_hole_plot)
 
 ```
 
@@ -803,16 +1289,15 @@ plot(land_use_effect_plot)
 ```{r number of holes}
 
 
-gam_2 <- gamm4::gamm4(number_of_holes ~ s(radius) + 
-                     # s(radius, by = land_use) +
-                      hypervolume_occupancy + hypervolume_occupancy:land_use +
-                      land_use, random = ~(1|SS), data = study_level_hole_frame, REML = TRUE, family = "poisson")
+gam_2 <- glmer(number_of_holes ~ hypervolume_occupancy  + hypervolume_occupancy:land_use +
+                      land_use + (1|SS) +(1|radius), data = study_level_hole_frame,family = "poisson",
+               control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=100000)))
 
 
 
 
-summary(gam_2$gam)
-anova(gam_2$gam)
+summary(gam_2)
+car::Anova(gam_2)
 
 
 
@@ -820,7 +1305,6 @@ land_use_plot <- c()
 
 median_volume <- median(unique(study_level_hole_frame$hypervolume_occupancy))
 
-median_radius <- median(unique(study_level_hole_frame$radius))
 
 
 
@@ -828,9 +1312,9 @@ for(land_use in land_uses){
   
     
 
-  data <- data.frame(land_use = land_use, predict(gam_2$gam, newdata = data.frame(radius = median_radius,
+  data <- data.frame(land_use = land_use, predict(gam_2, newdata = data.frame(
                                                                                         land_use = land_use,
-                                                                                        hypervolume_occupancy = median_volume), se.fit = TRUE), re.form = NA)
+                                                                                        hypervolume_occupancy = median_volume), re.form = NA))
     
   
   land_use_plot <- rbind(land_use_plot,data)
@@ -838,21 +1322,108 @@ for(land_use in land_uses){
 }
 
 
-land_use_plot$fit <- land_use_plot$fit - land_use_plot[land_use_plot$land_use == "Primary forest", "fit"]
-land_use_plot$lower <- land_use_plot$fit - land_use_plot$se.fit
-land_use_plot$upper <- land_use_plot$fit + land_use_plot$se.fit
 
-land_use_plot$land_use <- factor(land_use_plot$land_use, levels = c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban"))
+data <- data.frame(land_use = c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban"), hypervolume_occupancy = median_volume)
 
 
-land_use_effect_plot <- ggplot(data = land_use_plot, aes(x = land_use, y = fit, colour = land_use )) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_errorbar(aes(ymin= lower , ymax= upper), colour="black", width=.1, position=position_dodge(0.5), linetype = 1) +
-  geom_point(size = 5)  +
-  theme_classic()
+
+    
+    pred_fun <- function(x) {
+      as.numeric(predict(x, newdata = data, re.form = NA))
+    }
+    
+    
+    
+      
+    
+      
+      
+      
+      data$estimate <- NA
+      data$upper <- NA
+      data$lower <- NA
+      
+      booted_mod <-
+        bootMer(
+          gam_2,
+          FUN = function(x)
+            pred_fun(x),
+          nsim = 200,seed = 1234
+        )
 
 
-plot(land_use_effect_plot)
+
+      data$estimate <- booted_mod$t0 
+      bootstraps <- booted_mod$t      
+      
+
+
+  ninety_five_boot <- c()
+      
+      for (col in 1:ncol(bootstraps)) {
+        trim_col <- bootstraps[, col]
+        
+        trim_col <-
+          trim_col[trim_col > as.numeric(quantile(bootstraps[, col], 0)) &
+                     trim_col < as.numeric(quantile(bootstraps[, col], 1))]
+        
+        
+        ninety_five_boot <- cbind(ninety_five_boot, trim_col)
+        
+      }
+
+ ninety_five_boot <- ninety_five_boot/median(ninety_five_boot[,1])
+  
+
+  ninety_five_boot <- data.frame(ninety_five_boot)
+  
+  colnames(ninety_five_boot) <- c("Primary vegetation","Secondary vegetation","Plantation forest","Pasture","Cropland","Urban")
+  
+  
+  
+  
+  
+   boot_plot <-
+        ninety_five_boot %>% pivot_longer(cols = colnames(ninety_five_boot), names_to = "land_use") %>% dplyr::filter(!(land_use == "Urban" & value < 0.4))
+      
+   
+
+boot_plot$land_use <- factor(boot_plot$land_use, levels = land_uses)   
+      
+   
+   study_number_plot <- ggplot(data = boot_plot, aes(x = land_use, y = value, group = land_use)) +
+     geom_violin(aes(colour = land_use, fill = land_use), alpha = 0.5, show.legend = FALSE)+
+     geom_boxplot(width = 0.3, aes( fill = land_use), show.legend = FALSE) +
+     scale_colour_manual(values = land_use_colours[land_uses, "colours"]) +
+     scale_fill_manual(values = land_use_colours[land_uses, "colours"]) +
+     scale_y_continuous(limits = c(0.2, 1.6),
+                     breaks = c(0.5,0.75,1,1.25,1.5)) +
+     theme(panel.background = element_rect(fill = 'white', color = 'white'),
+panel.grid.major = element_line(color = 'white'),
+panel.grid.minor = element_line(color = 'white'),
+  axis.title.y = element_blank(),
+axis.line = element_line(colour = "black", linetype = "solid"),
+    axis.text.y = element_blank(),
+    #axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+    #axis.ticks.x = element_blank(),
+    axis.text.x = element_blank())
+  
+  
+plot(study_number_plot)  
+  
+
+
+png(
+  filename =
+    "../Figures/plots_for_figures/study_level_hole_number.png",
+  width = 200,
+  height = 150,
+  units = "mm",
+  res = 500
+)
+plot(study_number_plot)
+dev.off()
 
 
 ```

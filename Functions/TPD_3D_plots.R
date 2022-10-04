@@ -1,6 +1,6 @@
 
 markdown_rds_open <- function(path) {
-  open_file <- try(readRDS(path))
+  open_file <- try(readRDS(path), silent = TRUE)
   
   if (class(open_file) == "try-error") {
     open_file <- readRDS(paste("../", path, sep = ""))
@@ -9,6 +9,10 @@ markdown_rds_open <- function(path) {
   return(open_file)
   
 }
+
+
+
+
 
 
 ########################################
@@ -962,7 +966,8 @@ Calc_dissim_random <- function(data, randata, sites, threshold) {
   ransites_data <- TPD_plot_data(randata, sites)
   
   
-  TPD_i <- sites1_data[["pl_dat"]][["prob"]]
+  TPD_i <- sites1_data[["pl_dat"]]  %>%
+    percentile_cells() %>% dplyr::mutate(prob = ifelse(percentile >= threshold, 0, prob)) %>% pull(prob)
   
   
   TPD_j <- ransites_data[["pl_dat"]] %>%
@@ -1142,7 +1147,8 @@ TPD_holes <-
            randata = NULL,
            sites,
            threshold, 
-           minimum_points) {
+           minimum_points,
+          iteration) {
     ### extract the TPD data for teh two sets of sites
     
     TPD_holes_list <- list()
@@ -1192,7 +1198,7 @@ TPD_holes <-
       ## for the 3D plot need to just get the cells which are functionally occupied
       
       filled_cells_1 <-
-        percentile_cells(hypervolume_occupied_cells(data = sites1_data[["pl_dat"]]))
+        percentile_cells(hypervolume_occupied_cells(data = sites1_data[["pl_dat"]])) %>% dplyr::filter(percentile <= threshold)
       
       
       
@@ -1202,7 +1208,6 @@ TPD_holes <-
       filled_cells_2 <-
         percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile) %>%
         dplyr::filter(percentile_2 <= threshold)
-      
       
       
     } else {
@@ -1233,8 +1238,7 @@ TPD_holes <-
         hypervolume_occupied_cells(data = sites2_data[["pl_dat"]])
       
       filled_cells_2 <-
-        percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile) %>%
-        dplyr::filter(percentile_2 <= threshold)
+        percentile_cells(filled_cells_2) %>% dplyr::rename(prob_2 = prob, percentile_2 = percentile)
       
       
     }
@@ -1260,10 +1264,28 @@ TPD_holes <-
         prob_2 = ifelse(is.na(prob_2), 0, prob_2),
         diff = prob_2 - prob
       )
+    
+
+    
+    positive_percentile <- cells_frame %>% dplyr::filter(diff >  0 ) %>% dplyr::arrange(desc(diff)) %>% 
+      dplyr::mutate(diff = diff/sum(diff))
+    positive_percentile[,"p_percentile"] <- cumsum(positive_percentile[,"diff"]) 
+    positive_percentile <- positive_percentile %>% dplyr::filter(p_percentile <= threshold) %>% dplyr::select(-p_percentile)
+    
+
+    negative_percentile <- cells_frame %>% dplyr::filter(diff <  0 ) %>% dplyr::arrange(diff) %>% 
+      dplyr::mutate(diff = diff/sum(diff))
+    negative_percentile[,"p_percentile"] <- cumsum(negative_percentile[,"diff"]) 
+    negative_percentile <- negative_percentile %>% dplyr::filter(p_percentile <= threshold) %>% dplyr::select(-p_percentile)
+    
+    
+    
+    cells_frame <- rbind(positive_percentile,negative_percentile)
+    
     ###########################
     # minimum convex hull surrounding observed site
     
-    if (nrow(filled_cells_1) < 4) {
+    if (nrow(filled_cells_1) <= 4) {
       return(TPD_holes_list)
     }
     
@@ -1313,10 +1335,11 @@ TPD_holes <-
                                          hypervolume_occupancy = NA)
     } else {
 
-      
-      
+        
       hole_size <- c()
-      for(i in seq(0,10,0.01)){
+      
+      hole_check <- 0
+        for(i in seq(0,10,iteration)){
       
       hole_data <- data.frame(cluster = dbscan::dbscan(abs_int[,c(1:3)],eps = i, minPts = minimum_points)[["cluster"]]) %>% 
         dplyr::group_by(cluster) %>% dplyr::summarise(size = n()) %>% dplyr::mutate(cluster_volume = size * cellvolume, 
@@ -1342,14 +1365,16 @@ TPD_holes <-
       
       hole_size <- rbind(hole_size,h_data)
       
-      if(h_data$total_proportion > (h_data$total_absence_proportion * 0.99) ){
+      
+      
+      
+      if(hole_check > (h_data$total_hole_volume * 0.99)| h_data$total_proportion > (h_data$total_absence_proportion * 0.99)){
         break()
       }
       
-      }
-      
+      hole_check <- h_data$total_hole_volume
    
-      
+      }
      
       
       
@@ -1499,7 +1524,7 @@ TPD_forage_mapping_data <-
     trophic_niche_colours$Sc <- "goldenrod4"
     trophic_niche_colours$Hb.A <- "turquoise4"
     trophic_niche_colours$Hb.T <- "springgreen4"
-    trophic_niche_colours$Om <- "white"
+    trophic_niche_colours$Om <- "orchid"
     trophic_niche_colours$Unclassified <- "grey25"
     
     ### some sites didn't make the cut to the data due to deficiencies so drop them
@@ -1737,6 +1762,8 @@ TPD_forage_mapping_plot <-
 
 
 
+
+
 proportional_occupancy <- function(data,
                                    randata,
                                    fordata,
@@ -1753,7 +1780,9 @@ proportional_occupancy <- function(data,
                                               "Hb.T",
                                               "Om",
                                               "Unclassified"),
-                                   standardise = FALSE) {
+                                   standardise = FALSE,
+                                   threshold = 1) {
+  
   if (!all(sites %in% names(data)) | !all(sites %in% names(randata))) {
     sites <- sites[which(sites %in% names(data))]
     sites <- sites[which(sites %in% names(randata))]
@@ -1762,31 +1791,34 @@ proportional_occupancy <- function(data,
   
   prop_occ_df <- c()
   
-  sites1_data <- TPD_plot_data(data, sites)
-  ransites_data <- TPD_plot_data(randata, sites)
+  sites1_data <- TPD_plot_data(data, sites)[["pl_dat"]] %>% percentile_cells() %>% 
+    dplyr::mutate(prob = ifelse(percentile >= threshold, 0, prob))
+  ransites_data <- TPD_plot_data(randata, sites)[["pl_dat"]] %>% percentile_cells() %>%
+    dplyr::mutate(prob = ifelse(percentile >= threshold, 0, prob))
   
   
-  g <- "Fr"
+  
   for (g in guilds) {
     ran_guild_data <- ranfordata %>% dplyr::filter(Trophic_niche == g)
     
     guild_cells <- c()
-    for (i in 1:nrow(ran_guild_data)) {
+        for (i in 1:nrow(ran_guild_data)) {
       cell <-
         as.numeric(
           which(
-            sites1_data[["pl_dat"]]$y == ran_guild_data[i, "y"] &
-              sites1_data[["pl_dat"]]$x == ran_guild_data[i, "x"] &
-              sites1_data[["pl_dat"]]$z == ran_guild_data[i, "z"]
+            sites1_data$y == ran_guild_data[i, "y"] &
+              sites1_data$x == ran_guild_data[i, "x"] &
+              sites1_data$z == ran_guild_data[i, "z"]
           )
         )
       
-      guild_cells <- c(guild_cells, cell)
-    }
       
-    TPD_i <- sites1_data[["pl_dat"]][guild_cells, "prob"]
+      guild_cells <- c(guild_cells, cell)
+          }
+      
+    TPD_i <- sites1_data[guild_cells, "prob"]
     
-    TPD_j <- ransites_data[["pl_dat"]] %>%
+    TPD_j <- ransites_data %>%
       percentile_cells()  %>% slice(guild_cells) %>% pull(prob)
     
     if (standardise) {
@@ -1880,9 +1912,15 @@ reorder_combinations <- function(combo_df) {
 ####################################
 ####################################
 # ####################################
+# 
+# data = PREDICTS_tpds
+# sites = lu_sites
+# tpd_for_map = TPD_map
+# threshold = seq(0.1, 1, 0.1)
+
 
 centre_of_mass_for <-
-  function(data, sites = NULL, tpd_for_map, threshold) {
+  function(data, sites = NULL, tpd_for_map, percentile) {
     sites_data <- TPD_plot_data(data, sites)
     
     
@@ -1905,10 +1943,10 @@ centre_of_mass_for <-
       dplyr::distinct(Trophic_niche, full_prop_COM, full_probability)
     
     
-    for (i in 1:length(threshold)) {
+    for (i in 1:length(percentile)) {
       percentile_vol <-
-        functional_volume %>% dplyr::filter(percentile <= threshold[i]) %>%
-        dplyr::select(y, x, z, prob) %>% dplyr::mutate(percentile = threshold[i])
+        functional_volume %>% dplyr::filter(percentile <= percentile[i]) %>%
+        dplyr::select(y, x, z, prob) %>% dplyr::mutate(percentile = percentile[i])
       
       if (nrow(percentile_vol) == 0) {
         next()
@@ -1929,7 +1967,7 @@ centre_of_mass_for <-
         dplyr::group_by(Trophic_niche) %>%
         dplyr::summarise(n_cells = n()) %>% ungroup() %>% dplyr::mutate(prop_COM = n_cells /
                                                                           sum(n_cells),
-                                                                        percentile = threshold[i]) %>%
+                                                                        percentile = percentile[i]) %>%
         merge(full_guild_prop) %>% dplyr::mutate(relative_prop_COM = prop_COM /
                                                    full_prop_COM) %>%
         dplyr::select(-n_cells) %>%
@@ -1938,7 +1976,7 @@ centre_of_mass_for <-
       prob_species <-
         tpd_for_map[, colnames(tpd_for_map) != "prob"] %>% merge(percentile_vol, by = c("y", "x", "z")) %>%
         group_by(Trophic_niche) %>%
-        dplyr::summarise(prob_COM = sum(prob), percentile = threshold[i]) %>%
+        dplyr::summarise(prob_COM = sum(prob), percentile = percentile[i]) %>%
         data.frame()
       
       

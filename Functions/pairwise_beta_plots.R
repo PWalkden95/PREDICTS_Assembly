@@ -1,5 +1,5 @@
 beta_data <- beta_boot
-realm <- "Neotropic"
+realm <- "Palearctic"
 
 
 pairwise_beta_plot <- function(beta_data, realm){
@@ -13,7 +13,7 @@ plot_colours <- c(`Primary forest_Primary forest` = "green4",
                   `Primary forest_Minimal agriculture` = "darkseagreen1",
                   `Primary forest_Intensive agriculture` = "darkolivegreen1",
                   `Primary forest_Urban` = "palegreen",
-                  `Primary non-forest_Primary non-forest` = "green4",
+                  `Primary non-forest_Primary non-forest` = "#95A900",
                   `Primary non-forest_Secondary vegetation` = "chartreuse3",
                   `Primary non-forest_Plantation forest` = "seagreen3",
                   `Primary non-forest_Pasture` = "darkseagreen1",
@@ -85,7 +85,7 @@ p_dat <- beta_data %>% dplyr::filter(Realm == realm)
 
 
 
-plot_LU <- c("Primary forest","Primary non-forest", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban")
+plot_LU <- c("Primary vegetation", "Secondary vegetation", "Plantation forest", "Pasture", "Cropland", "Urban")
 
 data_LU <- unique(unlist(str_split(p_dat$Land_use_comp,pattern =  "_")))
 
@@ -113,7 +113,7 @@ plot_lvls <- lvls[p_order[[as.character(length(plot_LU))]]]
 
 level_plots <- list()
 
-pri_median <- median(p_dat %>% dplyr::filter(Land_use_comp == "Primary forest_Primary forest") %>% pull(value))
+pri_median <- median(p_dat %>% dplyr::filter(Land_use_comp == "Primary vegetation_Primary vegetation") %>% pull(value))
 
 
 for(l in plot_lvls){
@@ -179,8 +179,10 @@ contrast_1 <- unlist(str_split(pairwise_sig$contrast, pattern = " - "))[seq(1,nr
 contrast_2 <- unlist(str_split(pairwise_sig$contrast, pattern = " - "))[seq(2,nrow(pairwise_sig)*2,2)]
 
 
+
+
 realm_rows <- which(grepl(contrast_1, pattern = realm) &
-                      grepl(contrast_1, pattern = "Primary forest_Primary forest") &
+                      grepl(contrast_1, pattern = "Primary vegetation_Primary vegetation") &
                       grepl(contrast_2, pattern = realm))
 
 contrast_1 <- contrast_1[realm_rows]
